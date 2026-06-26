@@ -1,0 +1,113 @@
+import { useState } from 'react'
+import { teamAverage } from '../../logic/balancing'
+
+export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm, onCancel }) {
+  const [selected, setSelected] = useState(null)
+
+  const avgA = teamAverage(teamAPlayers)
+  const avgB = teamAverage(teamBPlayers)
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
+      <div className="bg-white dark:bg-stone-800 rounded-t-2xl w-full max-w-md p-5 pb-10">
+
+        <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-1 text-center">
+          Quem venceu?
+        </h2>
+        <p className="text-xs text-stone-400 text-center mb-5">
+          Selecione o time vencedor para atualizar os ratings
+        </p>
+
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          {/* Time A */}
+          <button
+            onClick={() => setSelected('A')}
+            className={`rounded-xl border-2 p-3 text-left transition-all ${
+              selected === 'A'
+                ? 'border-sage-dark bg-sage-light'
+                : 'border-stone-200 dark:border-stone-600 bg-stone-50 dark:bg-stone-700'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className={`text-xs font-medium ${
+                selected === 'A' ? 'text-sage-dark' : 'text-stone-400'
+              }`}>
+                🟢 Time A
+              </span>
+              {selected === 'A' && (
+                <span className="text-xs bg-sage-dark text-white rounded-full px-2 py-0.5">
+                  ✓ Vencedor
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-stone-500 mb-2">Média: {avgA}</div>
+            <div className="space-y-1">
+              {teamAPlayers.map(p => (
+                <div key={p.id} className="text-xs text-stone-600 dark:text-stone-300 truncate">
+                  {p.name}
+                </div>
+              ))}
+            </div>
+          </button>
+
+          {/* Time B */}
+          <button
+            onClick={() => setSelected('B')}
+            className={`rounded-xl border-2 p-3 text-left transition-all ${
+              selected === 'B'
+                ? 'border-sky bg-sky-light'
+                : 'border-stone-200 dark:border-stone-600 bg-stone-50 dark:bg-stone-700'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className={`text-xs font-medium ${
+                selected === 'B' ? 'text-sky-700' : 'text-stone-400'
+              }`}>
+                🔵 Time B
+              </span>
+              {selected === 'B' && (
+                <span className="text-xs bg-sky text-stone-700 rounded-full px-2 py-0.5">
+                  ✓ Vencedor
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-stone-500 mb-2">Média: {avgB}</div>
+            <div className="space-y-1">
+              {teamBPlayers.map(p => (
+                <div key={p.id} className="text-xs text-stone-600 dark:text-stone-300 truncate">
+                  {p.name}
+                </div>
+              ))}
+            </div>
+          </button>
+        </div>
+
+        {selected && (
+          <div className="bg-stone-50 dark:bg-stone-700 rounded-xl p-3 mb-4
+                          text-xs text-stone-500 dark:text-stone-400 text-center">
+            Vencedores ganham ~+2 pts · Perdedores perdem ~−1 pt
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3 rounded-xl border border-sand dark:border-stone-600
+                       text-sm text-stone-600 dark:text-stone-300"
+          >
+            Voltar
+          </button>
+          <button
+            onClick={() => selected && onConfirm(selected)}
+            disabled={!selected}
+            className="flex-1 py-3 rounded-xl bg-sage-dark text-white
+                       text-sm font-medium disabled:opacity-40"
+          >
+            Confirmar →
+          </button>
+        </div>
+
+      </div>
+    </div>
+  )
+}

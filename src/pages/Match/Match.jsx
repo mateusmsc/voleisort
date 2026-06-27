@@ -248,6 +248,23 @@ export default function Match() {
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
 
+        <div className="flex gap-2">
+          <button
+            onClick={() => setMode('finishing')}
+            className="flex-1 bg-sage-dark text-white rounded-xl py-2.5 text-sm font-medium"
+          >
+            Encerrar partida
+          </button>
+          <button
+            onClick={() => navigate(`/session/${code}/checkin`)}
+            className="px-4 py-2.5 bg-white dark:bg-stone-700 border border-sand dark:border-stone-600
+                       rounded-xl text-sm text-stone-600 dark:text-stone-300"
+            title="Ir para check-in"
+          >
+            👥
+          </button>
+        </div>
+
         <FieldTeams
           teamA={teamA}
           teamB={teamB}
@@ -287,23 +304,7 @@ export default function Match() {
       </div>
 
       <div className="px-4 py-3 border-t border-stone-200 dark:border-stone-700
-                      bg-stone-50 dark:bg-stone-800 space-y-2">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setMode('finishing')}
-            className="flex-1 bg-sage-dark text-white rounded-xl py-3 text-sm font-medium"
-          >
-            Encerrar partida
-          </button>
-          <button
-            onClick={() => navigate(`/session/${code}/checkin`)}
-            className="px-4 py-3 bg-white dark:bg-stone-700 border border-sand dark:border-stone-600
-                       rounded-xl text-sm text-stone-600 dark:text-stone-300"
-            title="Ir para check-in"
-          >
-            👥
-          </button>
-        </div>
+                      bg-stone-50 dark:bg-stone-800">
         <button
           onClick={() => setMode('confirmCancel')}
           className="w-full py-1.5 text-xs text-stone-400 underline"

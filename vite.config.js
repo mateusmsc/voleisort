@@ -3,14 +3,18 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.js'],
+  },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Vôlei App',
-        short_name: 'Vôlei',
-        description: 'Organize sua pelada de vôlei',
+          name: 'voleisort',
+          short_name: 'voleisort',
+          description: 'Organize sua pelada de volei',
         theme_color: '#6a8f6a',
         background_color: '#f7f5f0',
         display: 'standalone',

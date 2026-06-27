@@ -34,7 +34,6 @@ export default function PlayerProfile() {
     ? Math.round((player.stats.wins / player.stats.matches) * 100)
     : 0
 
-  // Histórico: buscar partidas onde este jogador participou
   const allMatches = Object.values(useMatchStore.getState().matches)
   const playerMatches = allMatches
     .filter(m =>
@@ -53,7 +52,6 @@ export default function PlayerProfile() {
   return (
     <div className="min-h-screen flex flex-col">
 
-      {/* Header */}
       <div className="px-4 py-3 border-b border-stone-200 bg-stone-50
                       flex items-center gap-3">
         <button
@@ -64,7 +62,6 @@ export default function PlayerProfile() {
         </button>
       </div>
 
-      {/* Topo do perfil */}
       <div className="bg-sage-light border-b border-sage px-4 py-5 text-center">
         <div className="w-16 h-16 rounded-full bg-sage text-sage-dark
                         flex items-center justify-center text-xl font-medium
@@ -78,7 +75,6 @@ export default function PlayerProfile() {
           })}
         </p>
 
-        {/* Barra de rating */}
         <div className="bg-white rounded-xl px-3 py-2 flex items-center gap-3">
           <span className="text-xs text-stone-400 flex-shrink-0">Rating</span>
           <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden">
@@ -121,7 +117,6 @@ export default function PlayerProfile() {
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-2 px-4 py-4">
         <div className="bg-white rounded-xl border border-stone-200 p-3 text-center">
           <p className="text-xl font-medium text-stone-800">{player.stats.matches}</p>
@@ -137,7 +132,6 @@ export default function PlayerProfile() {
         </div>
       </div>
 
-      {/* Taxa de vitória */}
       {player.stats.matches > 0 && (
         <div className="px-4 pb-2">
           <div className="bg-white rounded-xl border border-stone-200 px-4 py-3
@@ -148,7 +142,6 @@ export default function PlayerProfile() {
         </div>
       )}
 
-      {/* Histórico */}
       <div className="px-4 pb-8">
         <h2 className="text-xs font-medium text-stone-400 uppercase tracking-wide
                        mt-2 mb-3">

@@ -7,7 +7,7 @@ const DEFAULT_RATING = 50
 export const usePlayerStore = create(
   persist(
     (set, get) => ({
-      players: {},  // { [id]: Player }
+      players: {},
 
       addPlayer(name) {
         const id = uuid()
@@ -33,9 +33,7 @@ export const usePlayerStore = create(
         }))
       },
 
-      // Chamado após encerrar uma partida
       applyMatchResult(winnersIds, losersIds, ratingDeltas) {
-        // ratingDeltas: { [playerId]: number } — calculado em logic/rating.js
         set(state => {
           const updated = { ...state.players }
           for (const [id, delta] of Object.entries(ratingDeltas)) {

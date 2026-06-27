@@ -60,7 +60,6 @@ export default function Home() {
                  dark:bg-stone-900"
       style={dark ? {} : { background: 'linear-gradient(160deg, #e8f0e8 0%, #f0ebe2 100%)' }}
     >
-      {/* Toggle modo noturno */}
       <div className="absolute top-4 right-4">
         <button
           onClick={toggleDark}
@@ -79,15 +78,13 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Logo */}
       <div className="w-16 h-16 bg-sage rounded-2xl flex items-center justify-center
                       text-4xl mb-3 shadow-sm">
         🏐
       </div>
-      <h1 className="text-2xl font-medium text-stone-800 dark:text-stone-100 mb-1">Vôlei App</h1>
+      <h1 className="text-2xl font-medium text-stone-800 dark:text-stone-100 mb-1">voleisort</h1>
       <p className="text-sm text-stone-500 dark:text-stone-400 mb-8">Organize sua pelada com inteligência</p>
 
-      {/* Ações */}
       <div className="w-full max-w-sm space-y-3">
         <button
           onClick={handleNewSession}
@@ -127,9 +124,9 @@ export default function Home() {
         )}
       </div>
 
-      {/* Banner de importação */}
-      {pendingImport && (
-        <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-800
+      <p className="text-xs text-stone-400 dark:text-stone-600 mt-8">v1.2</p>
+
+      {pendingImport && (        <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-800
                         border-t border-sand dark:border-stone-700 p-4 pb-8 z-40">
           <p className="text-sm font-medium text-stone-800 dark:text-stone-100 mb-1">
             Retomar sessão <span className="text-sage-dark">{pendingImport.code}</span>?

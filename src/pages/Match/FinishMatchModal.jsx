@@ -19,7 +19,6 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
         </p>
 
         <div className="grid grid-cols-2 gap-3 mb-5">
-          {/* Time A */}
           <button
             onClick={() => setSelected('A')}
             className={`rounded-xl border-2 p-3 text-left transition-all ${
@@ -50,7 +49,6 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
             </div>
           </button>
 
-          {/* Time B */}
           <button
             onClick={() => setSelected('B')}
             className={`rounded-xl border-2 p-3 text-left transition-all ${

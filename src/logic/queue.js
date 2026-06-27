@@ -1,22 +1,103 @@
 import { teamAverage } from './balancing'
 
-/**
- * Monta o time desafiante após uma partida.
- *
- * @param {Player[]} winners           - time vencedor que permanece
- * @param {Player[]} losers            - perdedores que saem do campo
- * @param {Player[]} waiting           - fila de espera atual
- * @param {object} roundsOut           - { [playerId]: rounds sem jogar }
- * @param {object} config              - configurações da sessão
- * @returns {{ challenger: Player[], newWaiting: Player[] }}
- */
+export function distributeAllPlayers(allPlayers, teamSize) {
+  const sorted = [...allPlayers].sort((a, b) => b.rating - a.rating)
+  const inField = sorted.slice(0, teamSize * 2)
+  const rest    = sorted.slice(teamSize * 2)
+
+  const { teamA, teamB } = snakeDraft(inField, teamSize)
+  const nextTeams = buildNextQueue(rest, teamSize)
+
+  return { teamA, teamB, nextTeams }
+}
+
+export function buildNextQueue(players, teamSize) {
+  if (players.length === 0) return []
+  const groups = []
+  for (let i = 0; i < players.length; i += teamSize) {
+    groups.push(players.slice(i, i + teamSize))
+  }
+  return groups
+}
+
+export function snakeDraft(players, teamSize) {
+  const teamA = []
+  const teamB = []
+  players.slice(0, teamSize * 2).forEach((player, i) => {
+    const group   = Math.floor(i / 2)
+    const isEven  = group % 2 === 0
+    const isFirst = i % 2 === 0
+    ;(isEven ? isFirst : !isFirst) ? teamA.push(player) : teamB.push(player)
+  })
+  return { teamA, teamB }
+}
+
+export function advanceQueue(winners, losers, currentNext, teamSize, roundsOut, maxRoundsOut) {
+  const [firstNext = [], ...remainingNext] = currentNext
+
+  // Quem já estava esperando nas próximas seguintes mantém prioridade sobre os losers.
+  // A fila é FIFO: remainingNext vem antes dos losers.
+  // Se firstNext está incompleto, completa usando remainingNext (por roundsOut/FIFO),
+  // nunca usando losers para completar — losers sempre vão para o final.
+
+  let newOpponent = [...firstNext]
+  const missing = teamSize - newOpponent.length
+
+  // Fila restante: remainingNext flat (mantém ordem de chegada)
+  let queueFlat = remainingNext.flat()
+
+  if (missing > 0 && queueFlat.length > 0) {
+    // Completa o time com jogadores da fila existente, priorizando roundsOut
+    const candidates = queueFlat.map((p, idx) => ({ ...p, queueIdx: idx }))
+    candidates.sort((a, b) => {
+      const aUrgent = (roundsOut[a.id] ?? 0) >= maxRoundsOut
+      const bUrgent = (roundsOut[b.id] ?? 0) >= maxRoundsOut
+      if (aUrgent !== bUrgent) return aUrgent ? -1 : 1
+      // Em empate: ordem de chegada na fila (FIFO)
+      return a.queueIdx - b.queueIdx
+    })
+
+    const chosen = candidates.slice(0, missing)
+    newOpponent = [...newOpponent, ...chosen]
+
+    const chosenIds = new Set(chosen.map(p => p.id))
+    queueFlat = queueFlat.filter(p => !chosenIds.has(p.id))
+  } else if (missing > 0 && queueFlat.length === 0 && losers.length > 0) {
+    // Fila vazia: completa o time com losers (priorizando roundsOut)
+    const candidates = [...losers].map((p, idx) => ({ ...p, queueIdx: idx }))
+    candidates.sort((a, b) => {
+      const aUrgent = (roundsOut[a.id] ?? 0) >= maxRoundsOut
+      const bUrgent = (roundsOut[b.id] ?? 0) >= maxRoundsOut
+      if (aUrgent !== bUrgent) return aUrgent ? -1 : 1
+      return a.queueIdx - b.queueIdx
+    })
+
+    const chosen = candidates.slice(0, missing)
+    newOpponent = [...newOpponent, ...chosen]
+
+    const chosenIds = new Set(chosen.map(p => p.id))
+    // Losers não escolhidos vão para a fila, na ordem original
+    const leftoverLosers = losers.filter(p => !chosenIds.has(p.id))
+    const newNextTeams = buildNextQueue(leftoverLosers, teamSize)
+    return { newOpponent, newNextTeams }
+  }
+
+  // Monta a nova fila: primeiro os que já estavam esperando, depois os losers
+  const newQueuePlayers = [...queueFlat, ...losers]
+  const newNextTeams = buildNextQueue(newQueuePlayers, teamSize)
+
+  return { newOpponent, newNextTeams }
+}
+
+function avg(players) {
+  if (!players.length) return 0
+  return Math.round(players.reduce((s, p) => s + p.rating, 0) / players.length)
+}
+
 export function buildChallenger(winners, losers, waiting, roundsOut, config) {
   const { teamSize, maxRoundsOut, ratingDeltaThreshold } = config
 
-  // Pool disponível = perdedores + quem estava na fila
   const pool = [...losers, ...waiting]
-
-  // Alvo de rating: média do time vencedor
   const winnerAvg = teamAverage(winners)
 
   const challenger = []
@@ -24,10 +105,8 @@ export function buildChallenger(winners, losers, waiting, roundsOut, config) {
 
   while (challenger.length < teamSize && remaining.length > 0) {
     const currentAvg = teamAverage(challenger)
-    // Rating ideal do próximo jogador para atingir a média alvo
     const targetRating = winnerAvg * teamSize - currentAvg * challenger.length
 
-    // Verificar se alguém está há muitas rodadas fora (urgência)
     const urgentPlayers = remaining.filter(
       p => (roundsOut[p.id] ?? 0) >= maxRoundsOut
     )
@@ -35,26 +114,22 @@ export function buildChallenger(winners, losers, waiting, roundsOut, config) {
     let chosen
 
     if (urgentPlayers.length > 0) {
-      // Urgência: pega o mais próximo do rating ideal dentre os urgentes
       chosen = urgentPlayers.reduce((best, p) =>
         Math.abs(p.rating - targetRating) < Math.abs(best.rating - targetRating)
           ? p : best
       )
     } else {
-      // Normal: melhor encaixe por rating
       const ideal = remaining.reduce((best, p) =>
         Math.abs(p.rating - targetRating) < Math.abs(best.rating - targetRating)
           ? p : best
       )
 
-      // Verificar se há alguém aguardando que está bem próximo do ideal
       const waitingCandidates = remaining.filter(p =>
         waiting.includes(p) &&
         Math.abs(p.rating - targetRating) <= (ratingDeltaThreshold ?? 10) + 10
       )
 
       if (waitingCandidates.length > 0) {
-        // Prefere quem está na fila há mais tempo (maior roundsOut)
         chosen = waitingCandidates.reduce((best, p) =>
           (roundsOut[p.id] ?? 0) > (roundsOut[best.id] ?? 0) ? p : best
         )
@@ -73,15 +148,6 @@ export function buildChallenger(winners, losers, waiting, roundsOut, config) {
   }
 }
 
-/**
- * Atualiza o contador de rodadas fora de cada jogador.
- * Jogadores que jogaram voltam a zero. Quem ficou fora incrementa.
- *
- * @param {string[]} allCheckedInIds
- * @param {string[]} playingNowIds    - jogadores das duas equipes atuais
- * @param {object} currentRoundsOut   - estado anterior { [id]: number }
- * @returns {object}                  - novo estado { [id]: number }
- */
 export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut) {
   const updated = {}
   for (const id of allCheckedInIds) {

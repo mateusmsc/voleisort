@@ -36,7 +36,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
             : 'bg-white dark:bg-stone-800/60 border-stone-200 dark:border-stone-700/60'
         }`}
       >
-        {/* Avatar — clique para abrir menu */}
         <div
           onClick={() => setShowMenu(s => !s)}
           className="w-9 h-9 rounded-full bg-sage dark:bg-sage-dark/30 flex items-center justify-center
@@ -46,7 +45,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
           {initials}
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0" onClick={onToggle}>
           <p className="text-sm font-medium text-stone-800 dark:text-stone-100 truncate">{player.name}</p>
           <p className="text-xs text-stone-400 dark:text-stone-500">
@@ -56,7 +54,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
           </p>
         </div>
 
-        {/* Rating */}
         <div
           onClick={onToggle}
           className={`text-xs font-medium px-2 py-1 rounded-md border ${
@@ -68,7 +65,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
           {player.rating}
         </div>
 
-        {/* Checkbox */}
         <div
           onClick={onToggle}
           className={`w-5 h-5 rounded-full border flex items-center justify-center
@@ -82,7 +78,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
         </div>
       </div>
 
-      {/* Menu de opções */}
       {showMenu && (
         <div className="absolute left-0 top-full mt-1 z-20
                         bg-white dark:bg-stone-800

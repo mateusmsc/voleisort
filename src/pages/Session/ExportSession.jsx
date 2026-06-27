@@ -16,7 +16,6 @@ export default function ExportSession() {
 
   if (!session) return null
 
-  // Montar payload
   const sessionPlayers = getAllPlayers().filter(p =>
     session.playerIds.includes(p.id)
   )
@@ -32,7 +31,6 @@ export default function ExportSession() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback
     }
   }
 
@@ -48,7 +46,6 @@ export default function ExportSession() {
     }
   }
 
-  // Resumo da sessão
   const totalMatches = matches.filter(m => m.status === 'finished').length
 
   return (
@@ -67,7 +64,6 @@ export default function ExportSession() {
         Compartilhe para retomar na próxima semana
       </p>
 
-      {/* Card da sessão */}
       <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-medium text-stone-800">{session.name}</h2>
@@ -94,7 +90,6 @@ export default function ExportSession() {
         </div>
       </div>
 
-      {/* Ranking rápido */}
       <h2 className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-3">
         Ranking da sessão
       </h2>
@@ -116,7 +111,6 @@ export default function ExportSession() {
         )}
       </div>
 
-      {/* Ações de compartilhamento */}
       <div className="space-y-3">
         <button
           onClick={handleShare}

@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { useMatchStore } from '../../store/useMatchStore'
-import { formTeams } from '../../logic/balancing'
+import { distributeAllPlayers } from '../../logic/queue'
+import { applyCheckinWithActiveMatch, insertPlayerIntoQueue } from '../../logic/checkin-logic'
 import PlayerRow from '../../components/PlayerRow'
 import AddPlayerModal from './AddPlayerModal'
 
@@ -14,7 +15,7 @@ export default function Checkin() {
   const session = useSessionStore(s => s.getSessionByCode(code))
   const { getAllPlayers, addPlayer, getPlayer } = usePlayerStore()
   const { setCheckedIn, addPlayerToSession, addMatch, updateSessionConfig } = useSessionStore()
-  const { createMatch, getMatchesBySession } = useMatchStore()
+  const { createMatch, getMatchesBySession, updateNextTeams } = useMatchStore()
 
   const [search, setSearch] = useState('')
   const [checkedIn, setCheckedInLocal] = useState(
@@ -25,7 +26,6 @@ export default function Checkin() {
 
   const allPlayers = getAllPlayers()
 
-  // Jogadores que já pertencem a esta sessão aparecem primeiro
   const sessionPlayerIds = new Set(session?.playerIds ?? [])
   const sorted = useMemo(() => {
     return [...allPlayers].sort((a, b) => {
@@ -39,7 +39,6 @@ export default function Checkin() {
     p.name.toLowerCase().includes(search.toLowerCase())
   )
 
-  // Verifica se há uma partida ativa (ongoing) nesta sessão
   const activeMatch = useMemo(() => {
     if (!session) return null
     const matches = getMatchesBySession(session.id)
@@ -49,16 +48,25 @@ export default function Checkin() {
   function toggleCheckin(playerId) {
     setCheckedInLocal(prev => {
       const next = new Set(prev)
-
       if (next.has(playerId)) {
-        // Tirando check-in: se há partida ativa e o jogador está em um time,
-        // precisamos fazer substituição — apenas remove do local por ora;
-        // a lógica de substituição é aplicada no handleStartMatch
         next.delete(playerId)
       } else {
         next.add(playerId)
       }
+      return next
+    })
+  }
 
+  function handleSelectAll() {
+    const allFiltered = filtered.map(p => p.id)
+    const allChecked = allFiltered.every(id => checkedIn.has(id))
+    setCheckedInLocal(prev => {
+      const next = new Set(prev)
+      if (allChecked) {
+        allFiltered.forEach(id => next.delete(id))
+      } else {
+        allFiltered.forEach(id => next.add(id))
+      }
       return next
     })
   }
@@ -70,6 +78,25 @@ export default function Checkin() {
     }
     setCheckedInLocal(prev => new Set([...prev, id]))
     setShowAddModal(false)
+
+    if (activeMatch) {
+      const newPlayer = getPlayer(id)
+      if (!newPlayer) return
+
+      const currentNextTeams = activeMatch.nextTeams ?? []
+      const teamSize = session.config.teamSize
+      const updatedNextTeams = insertPlayerIntoQueue(currentNextTeams, id, teamSize)
+
+      useMatchStore.setState(state => ({
+        matches: {
+          ...state.matches,
+          [activeMatch.id]: {
+            ...state.matches[activeMatch.id],
+            nextTeams: updatedNextTeams,
+          },
+        },
+      }))
+    }
   }
 
   function handleDeletePlayer(playerId) {
@@ -84,111 +111,82 @@ export default function Checkin() {
     if (!session) return
     const presentPlayers = allPlayers.filter(p => checkedIn.has(p.id))
 
-    // Persistir check-in no store
     setCheckedIn(session.id, [...checkedIn])
 
     if (activeMatch) {
       const currentTeamSize = session.config.teamSize
-      const activeTeamSize  = activeMatch.teams.A.length  // tamanho real dos times na partida ativa
+      const activeTeamSize  = activeMatch.teams.A.length
 
-      // ── teamSize mudou → refaz o sorteio completo ──────────────────
       if (currentTeamSize !== activeTeamSize) {
         const { cancelMatch } = useMatchStore.getState()
         cancelMatch(activeMatch.id)
 
-        const { teamA, teamB, waiting } = formTeams(presentPlayers, currentTeamSize)
-        const nextRound = activeMatch.round  // mantém o número da rodada
+        const { teamA, teamB, nextTeams } = distributeAllPlayers(presentPlayers, currentTeamSize)
+        const nextRound = activeMatch.round
+        // Ao mudar teamSize com partida ativa, zera contagem de rounds de fora
         const newMatch = createMatch(
           session.id,
           nextRound,
           { A: teamA.map(p => p.id), B: teamB.map(p => p.id) },
-          waiting.map(p => p.id)
+          nextTeams.map(team => team.map(p => p.id)),
+          nextRound
         )
         addMatch(session.id, newMatch.id)
         navigate(`/session/${code}/match/${newMatch.id}`)
         return
       }
 
-      // ── Modo substituição (teamSize igual) ────────────────────────
-      // Identifica quais jogadores foram removidos do check-in em relação à partida ativa
+      const currentNextTeamsFlat = (activeMatch.nextTeams ?? []).flat()
       const currentInMatch = [
         ...activeMatch.teams.A,
         ...activeMatch.teams.B,
-        ...activeMatch.waitingIds,
+        ...currentNextTeamsFlat,
       ]
-      const removedFromMatch = currentInMatch.filter(id => !checkedIn.has(id))
 
-      if (removedFromMatch.length === 0) {
-        // Nenhuma mudança relevante — só navega de volta
+      const { newTeamA, newTeamB, newNextTeams, changed } = applyCheckinWithActiveMatch({
+        teamA: activeMatch.teams.A,
+        teamB: activeMatch.teams.B,
+        nextTeams: activeMatch.nextTeams ?? [],
+        checkedInSet: checkedIn,
+        presentPlayers,
+        currentInMatch,
+        teamSize: currentTeamSize,
+        getPlayer,
+      })
+
+      if (!changed) {
         navigate(`/session/${code}/match/${activeMatch.id}`)
         return
       }
 
-      // Jogadores novos que podem entrar (presentes, mas não estavam na partida)
-      const newcomers = presentPlayers.filter(p => !currentInMatch.includes(p.id))
-
-      // Reconstrói o match substituindo cada removido pelo melhor substituto disponível
-      let newTeamA = [...activeMatch.teams.A]
-      let newTeamB = [...activeMatch.teams.B]
-      let newWaiting = [...activeMatch.waitingIds]
-      let available = [...newcomers]
-
-      for (const removedId of removedFromMatch) {
-        // Encontra o melhor substituto por similaridade de rating
-        const removedPlayer = getPlayer(removedId) ?? { rating: 50 }
-        const best = available.length > 0
-          ? available.reduce((a, b) =>
-              Math.abs(b.rating - removedPlayer.rating) < Math.abs(a.rating - removedPlayer.rating)
-                ? b : a
-            )
-          : null
-
-        // Remove de onde estava
-        if (newTeamA.includes(removedId)) {
-          newTeamA = newTeamA.filter(id => id !== removedId)
-          if (best) newTeamA.push(best.id)
-        } else if (newTeamB.includes(removedId)) {
-          newTeamB = newTeamB.filter(id => id !== removedId)
-          if (best) newTeamB.push(best.id)
-        } else {
-          newWaiting = newWaiting.filter(id => id !== removedId)
-          if (best) newWaiting.push(best.id)
-        }
-
-        if (best) {
-          available = available.filter(p => p.id !== best.id)
-        }
-      }
-
-      // Atualiza a partida ativa com os novos times
       const { updateTeams } = useMatchStore.getState()
       updateTeams(activeMatch.id, { A: newTeamA, B: newTeamB })
-      // Atualiza waitingIds manualmente via store
-      useMatchStore.setState(state => ({
-        matches: {
-          ...state.matches,
-          [activeMatch.id]: {
-            ...state.matches[activeMatch.id],
-            waitingIds: newWaiting,
-          },
-        },
-      }))
+      updateNextTeams(activeMatch.id, newNextTeams)
 
       navigate(`/session/${code}/match/${activeMatch.id}`)
       return
     }
 
-    // ── Modo normal: criar primeira partida ────────────────────────
-    const { teamA, teamB, waiting } = formTeams(
+    const { teamA, teamB, nextTeams } = distributeAllPlayers(
       presentPlayers,
       session.config.teamSize
     )
 
+    // Verificar se há partidas anteriores na sessão (pode ser após cancelamento)
+    // Se sim, definir roundsOutResetAt para zerar a contagem de rounds de fora
+    const allSessionMatches = getMatchesBySession(session.id)
+    const hasPreviousMatches = allSessionMatches.length > 0
+    const nextRound = hasPreviousMatches
+      ? Math.max(...allSessionMatches.map(m => m.round)) + 1
+      : 1
+
     const match = createMatch(
       session.id,
-      1,
+      nextRound,
       { A: teamA.map(p => p.id), B: teamB.map(p => p.id) },
-      waiting.map(p => p.id)
+      nextTeams.map(team => team.map(p => p.id)),
+      // Se há histórico anterior, zera a contagem de fora a partir deste round
+      hasPreviousMatches ? nextRound : undefined
     )
     addMatch(session.id, match.id)
 
@@ -214,7 +212,6 @@ export default function Checkin() {
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 dark:bg-stone-900">
-      {/* Header */}
       <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-700
                       bg-stone-50 dark:bg-stone-800
                       flex items-center justify-between sticky top-0 z-10">
@@ -241,7 +238,6 @@ export default function Checkin() {
         </div>
       </div>
 
-      {/* Painel de configuração da sessão */}
       <div className="px-4 border-b border-stone-100 dark:border-stone-700
                       bg-stone-50 dark:bg-stone-800">
         <button
@@ -282,11 +278,9 @@ export default function Checkin() {
         )}
       </div>
 
-      {/* Barra de ação superior: contador + botão adicionar + formar times */}
       <div className="px-4 pt-3 pb-2 bg-stone-50 dark:bg-stone-800
                       border-b border-stone-100 dark:border-stone-700">
         <div className="flex items-center justify-between gap-2">
-          {/* Contador e info */}
           <div className="flex items-center gap-2">
             <span className={`text-sm font-medium ${canStart ? 'text-sage-dark' : 'text-stone-700 dark:text-stone-300'}`}>
               {checkedIn.size}
@@ -297,7 +291,17 @@ export default function Checkin() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Botão adicionar */}
+            {filtered.length > 0 && (
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 px-3 py-2
+                           bg-white dark:bg-stone-700 border border-sand dark:border-stone-600
+                           rounded-xl text-xs text-stone-600 dark:text-stone-300 font-medium"
+              >
+                {filtered.every(p => checkedIn.has(p.id)) ? 'Desmarcar todos' : 'Selecionar todos'}
+              </button>
+            )}
+
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-1.5 px-3 py-2
@@ -307,7 +311,6 @@ export default function Checkin() {
               + Novo
             </button>
 
-            {/* Botão formar times */}
             <button
               onClick={handleStartMatch}
               disabled={!canStart}
@@ -319,7 +322,6 @@ export default function Checkin() {
           </div>
         </div>
 
-        {/* Barra de progresso visual */}
         <div className="mt-2 h-1 bg-stone-200 dark:bg-stone-600 rounded-full overflow-hidden">
           <div
             className="h-full bg-sage-dark rounded-full transition-all"
@@ -328,7 +330,14 @@ export default function Checkin() {
         </div>
       </div>
 
-      {/* Busca */}
+      {activeMatch && (
+        <div className="mx-4 mt-3 bg-peach-light border border-peach rounded-xl px-3 py-2.5
+                        text-xs text-amber-800 dark:text-amber-200">
+          <strong>Partida ativa.</strong> Alterações no check-in serão aplicadas como substituições sem re-randomizar os times.
+          Adicionar um novo jogador o coloca na fila automaticamente.
+        </div>
+      )}
+
       <div className="px-4 pt-3 pb-2">
         <div className="flex items-center gap-2 bg-white dark:bg-stone-800
                         border border-sand dark:border-stone-600
@@ -344,7 +353,6 @@ export default function Checkin() {
         </div>
       </div>
 
-      {/* Lista de jogadores */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {filtered.map(player => (
           <PlayerRow
@@ -363,7 +371,6 @@ export default function Checkin() {
         )}
       </div>
 
-      {/* Modal de novo jogador */}
       {showAddModal && (
         <AddPlayerModal
           onConfirm={handleAddNewPlayer}

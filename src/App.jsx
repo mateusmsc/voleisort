@@ -6,8 +6,6 @@ import Checkin from './pages/Checkin/Checkin'
 import Match from './pages/Match/Match'
 import PlayerProfile from './pages/Player/PlayerProfile'
 
-// Wrapper que força remount do Match quando o matchId muda,
-// garantindo que o estado local (modo, pop-ups) seja sempre limpo.
 function MatchWrapper() {
   const { matchId } = useParams()
   return <Match key={matchId} />

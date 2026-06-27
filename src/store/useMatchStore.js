@@ -5,27 +5,26 @@ import { v4 as uuid } from 'uuid'
 export const useMatchStore = create(
   persist(
     (set, get) => ({
-      matches: {},  // { [id]: Match }
+      matches: {},
 
-      createMatch(sessionId, round, teams, waitingIds) {
-        // teams: { A: [playerId, ...], B: [playerId, ...] }
+      createMatch(sessionId, round, teams, nextTeams = [], roundsOutResetAt = undefined) {
         const id = uuid()
         const match = {
           id,
           sessionId,
           round,
-          status: 'ongoing',    // 'ongoing' | 'finished' | 'cancelled'
+          status: 'ongoing',
           teams,
-          waitingIds,
-          winner: null,         // 'A' | 'B' | null
+          nextTeams,
+          winner: null,
           startedAt: new Date().toISOString(),
           finishedAt: null,
+          ...(roundsOutResetAt !== undefined ? { roundsOutResetAt } : {}),
         }
         set(state => ({ matches: { ...state.matches, [id]: match } }))
         return match
       },
 
-      // Edição manual dos times antes ou durante a partida
       updateTeams(matchId, teams) {
         set(state => ({
           matches: {
@@ -35,7 +34,15 @@ export const useMatchStore = create(
         }))
       },
 
-      // Chamado ao selecionar o vencedor na tela de encerramento
+      updateNextTeams(matchId, nextTeams) {
+        set(state => ({
+          matches: {
+            ...state.matches,
+            [matchId]: { ...state.matches[matchId], nextTeams },
+          },
+        }))
+      },
+
       finishMatch(matchId, winner) {
         set(state => ({
           matches: {

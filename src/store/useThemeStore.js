@@ -16,7 +16,6 @@ export const useThemeStore = create(
         }
       },
 
-      // Aplica a classe ao carregar a página
       init() {
         if (get().dark) {
           document.documentElement.classList.add('dark')

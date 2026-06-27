@@ -4,7 +4,6 @@ import './index.css'
 import App from './App.jsx'
 import { useThemeStore } from './store/useThemeStore.js'
 
-// Aplica o tema salvo antes de renderizar (evita flash)
 useThemeStore.getState().init()
 
 createRoot(document.getElementById('root')).render(

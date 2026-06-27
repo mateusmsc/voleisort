@@ -3,11 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
-import { buildChallenger } from '../../logic/queue'
+import { advanceQueue } from '../../logic/queue'
 import { calculateRatingDeltas } from '../../logic/rating'
 import { shuffleTeams } from '../../logic/balancing'
-import TeamCard from '../../components/TeamCard'
-import WaitingQueue from './WaitingQueue'
+import FieldTeams from './FieldTeams'
+import NextTeamCard from './NextTeamCard'
 import FinishMatchModal from './FinishMatchModal'
 import EditTeamsModal from './EditTeamsModal'
 
@@ -15,53 +15,52 @@ export default function Match() {
   const { code, matchId } = useParams()
   const navigate = useNavigate()
 
-  const match = useMatchStore(s => s.getMatch(matchId))
-  const { finishMatch, cancelMatch, updateTeams, createMatch } = useMatchStore()
+  const match   = useMatchStore(s => s.getMatch(matchId))
   const session = useSessionStore(s => s.getSessionByCode(code))
+  const { finishMatch, cancelMatch, updateTeams, updateNextTeams, createMatch } = useMatchStore()
   const { addMatch } = useSessionStore()
   const { getPlayer, applyMatchResult } = usePlayerStore()
 
-  // 'playing' | 'finishing' | 'editing' | 'success'
   const [mode, setMode] = useState('playing')
-  const [winnerLabel, setWinnerLabel] = useState(null)
-  const [nextMatchPath, setNextMatchPath] = useState(null)
+  const [editingNextIdx, setEditingNextIdx] = useState(null)
 
-  // Resolver IDs em objetos Player
-  const teamAPlayers = useMemo(
+  const teamA = useMemo(
     () => (match?.teams.A ?? []).map(id => getPlayer(id)).filter(Boolean),
     [match, getPlayer]
   )
-  const teamBPlayers = useMemo(
+  const teamB = useMemo(
     () => (match?.teams.B ?? []).map(id => getPlayer(id)).filter(Boolean),
     [match, getPlayer]
   )
-  const waitingPlayers = useMemo(
-    () => (match?.waitingIds ?? []).map(id => getPlayer(id)).filter(Boolean),
+  const nexts = useMemo(
+    () => (match?.nextTeams ?? []).map(team => team.map(id => getPlayer(id)).filter(Boolean)),
     [match, getPlayer]
   )
 
-  // Rodadas consecutivas fora: conta quantas partidas SEGUIDAS (de trás pra frente)
-  // cada jogador ficou sem jogar antes da partida atual.
   const roundsOut = useMemo(() => {
     if (!match || !session) return {}
+    const resetFromRound = match.roundsOutResetAt ?? 0
     const allMatches = useMatchStore.getState()
       .getMatchesBySession(session.id)
-      .filter(m => m.id !== matchId && m.status !== 'cancelled')
+      .filter(m =>
+        m.id !== matchId &&
+        m.status === 'finished' &&
+        m.round >= resetFromRound
+      )
 
-    const allPresent = [
+    const allIds = [
       ...(match.teams.A ?? []),
       ...(match.teams.B ?? []),
-      ...(match.waitingIds ?? [])
+      ...(match.nextTeams ?? []).flat()
     ]
 
     const counts = {}
-    for (const id of allPresent) {
+    for (const id of allIds) {
       let consecutive = 0
-      // percorre do mais recente para o mais antigo
       for (let i = allMatches.length - 1; i >= 0; i--) {
         const m = allMatches[i]
         const played = [...m.teams.A, ...m.teams.B]
-        if (played.includes(id)) break   // jogou nessa — para de contar
+        if (played.includes(id)) break
         consecutive++
       }
       counts[id] = consecutive
@@ -70,46 +69,119 @@ export default function Match() {
   }, [match, session, matchId])
 
   function handleFinish(winner) {
-    const winners = winner === 'A' ? teamAPlayers : teamBPlayers
-    const losers  = winner === 'A' ? teamBPlayers : teamAPlayers
+    const winners = winner === 'A' ? teamA : teamB
+    const losers  = winner === 'A' ? teamB : teamA
 
-    // 1. Calcular e aplicar deltas de rating
     const deltas = calculateRatingDeltas(winners, losers)
-    applyMatchResult(
-      winners.map(p => p.id),
-      losers.map(p => p.id),
-      deltas
-    )
-
-    // 2. Marcar partida como finalizada
+    applyMatchResult(winners.map(p => p.id), losers.map(p => p.id), deltas)
     finishMatch(matchId, winner)
 
-    // 3. Montar próximo time desafiante
-    const { challenger, newWaiting } = buildChallenger(
-      winners,
-      losers,
-      waitingPlayers,
-      roundsOut,
-      session.config
+    const { newOpponent, newNextTeams } = advanceQueue(
+      winners, losers, nexts,
+      session.config.teamSize, roundsOut, session.config.maxRoundsOut
     )
 
-    // 4. Criar próxima partida automaticamente
     const nextRound = (match.round ?? 1) + 1
     const nextMatch = createMatch(
       session.id,
       nextRound,
-      {
-        A: winners.map(p => p.id),
-        B: challenger.map(p => p.id),
-      },
-      newWaiting.map(p => p.id)
+      { A: winners.map(p => p.id), B: newOpponent.map(p => p.id) },
+      newNextTeams.map(t => t.map(p => p.id)),
+      match.roundsOutResetAt
     )
     addMatch(session.id, nextMatch.id)
+    navigate(`/session/${code}/match/${nextMatch.id}`)
+  }
 
-    // 5. Guardar rota da próxima partida e mostrar pop-up de sucesso
-    setNextMatchPath(`/session/${code}/match/${nextMatch.id}`)
-    setWinnerLabel(winner === 'A' ? 'Time A' : 'Time B')
-    setMode('success')
+  function handleShuffle() {
+    const { teamA: newA, teamB: newB } = shuffleTeams(teamA, teamB, 3)
+    updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
+  }
+
+  function handleSaveCurrentTeams([newA, newB], newPool) {
+    updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
+    // Reconstrói nextTeams a partir do pool retornado pelo modal.
+    // O pool é a lista plana de jogadores que ficaram fora dos times A e B.
+    // Era nexts.flat() antes da edição; agora pode ter jogadores diferentes.
+    if (newPool !== undefined) {
+      const teamSize = session.config.teamSize
+      // Reconstrói usando os mesmos tamanhos de equipe das próximas originais
+      const poolIds = [...newPool.map(p => p.id)]
+      const reconstructed = nexts.map(origTeam => {
+        const chunk = poolIds.splice(0, origTeam.length)
+        return chunk
+      }).filter(t => t.length > 0)
+      // Sobras além das próximas originais
+      while (poolIds.length > 0) {
+        reconstructed.push(poolIds.splice(0, teamSize))
+      }
+      updateNextTeams(matchId, reconstructed)
+    }
+    setMode('playing')
+  }
+
+  function handleSaveNextTeam(idx, [newTeam], newPool) {
+    const teamSize = session.config.teamSize
+
+    if (newPool !== undefined) {
+      // Pool contém: teamA + teamB + outras próximas (todos exceto a próxima editada)
+      // Detectar trocas comparando estados: quem saiu do campo foi para a próxima,
+      // quem saiu da próxima foi para o campo.
+      const origNextTeam = nexts[idx].map(p => p.id)
+      const newNextTeamIds = newTeam.map(p => p.id)
+      const poolIds = newPool.map(p => p.id)
+
+      // Jogadores que estavam na próxima editada mas agora estão no pool = foram para o campo
+      const movedToPool = origNextTeam.filter(id => !newNextTeamIds.includes(id))
+      // Jogadores que estavam no pool mas agora estão na próxima = vieram do campo/outra próxima
+      const movedFromPool = newNextTeamIds.filter(id => !origNextTeam.includes(id))
+
+      const onFieldAll = new Set([...match.teams.A, ...match.teams.B])
+
+      // Para cada jogador que veio do pool para a próxima, verificar se era do campo
+      let newTeamAIds = [...match.teams.A]
+      let newTeamBIds = [...match.teams.B]
+      let fieldChanged = false
+
+      for (const newcomerId of movedFromPool) {
+        if (onFieldAll.has(newcomerId)) {
+          // Este jogador era do campo e foi para a próxima: substituir no campo pelo que saiu da próxima
+          // Encontrar quem da próxima foi para o pool no lugar deste jogador de campo
+          const replacedByQueue = movedToPool[movedFromPool.indexOf(newcomerId)]
+          if (replacedByQueue) {
+            newTeamAIds = newTeamAIds.map(id => id === newcomerId ? replacedByQueue : id)
+            newTeamBIds = newTeamBIds.map(id => id === newcomerId ? replacedByQueue : id)
+            fieldChanged = true
+          }
+        }
+      }
+
+      if (fieldChanged) {
+        updateTeams(matchId, { A: newTeamAIds, B: newTeamBIds })
+      }
+
+      // Reconstituir as outras próximas a partir dos ids do pool que não são do campo
+      const updatedFieldIds = new Set([...newTeamAIds, ...newTeamBIds])
+      const otherQueueIds = poolIds.filter(id => !updatedFieldIds.has(id))
+
+      const otherOrigNexts = nexts.filter((_, i) => i !== idx)
+      const remaining = [...otherQueueIds]
+      const reconstructedOthers = otherOrigNexts.map(origTeam => {
+        return remaining.splice(0, origTeam.length)
+      }).filter(t => t.length > 0)
+      while (remaining.length > 0) {
+        reconstructedOthers.push(remaining.splice(0, teamSize))
+      }
+
+      // Inserir a próxima editada na posição correta
+      reconstructedOthers.splice(idx, 0, newNextTeamIds)
+      updateNextTeams(matchId, reconstructedOthers.filter(t => t.length > 0))
+    } else {
+      const updatedNexts = nexts.map((team, i) => i === idx ? newTeam : team)
+      updateNextTeams(matchId, updatedNexts.map(t => t.map(p => p.id)))
+    }
+    setMode('playing')
+    setEditingNextIdx(null)
   }
 
   function handleCancel() {
@@ -117,18 +189,17 @@ export default function Match() {
     navigate(`/session/${code}/checkin`)
   }
 
-  function handleSaveTeams(newTeams) {
-    updateTeams(matchId, newTeams)
+  function handleResetRoundsOut() {
+    useMatchStore.setState(state => ({
+      matches: {
+        ...state.matches,
+        [matchId]: {
+          ...state.matches[matchId],
+          roundsOutResetAt: (match.round ?? 1) + 1,
+        },
+      },
+    }))
     setMode('playing')
-  }
-
-  function handleShuffle() {
-    // Troca até 3 pares entre os times buscando minimizar a diferença de médias
-    const { teamA: newA, teamB: newB } = shuffleTeams(teamAPlayers, teamBPlayers, 3)
-    updateTeams(matchId, {
-      A: newA.map(p => p.id),
-      B: newB.map(p => p.id),
-    })
   }
 
   if (!match) {
@@ -138,10 +209,9 @@ export default function Match() {
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 dark:bg-stone-900">
 
-      {/* Header */}
       <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-700
                       bg-stone-50 dark:bg-stone-800
-                      flex items-center justify-between sticky top-0">
+                      flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate('/')}
@@ -161,109 +231,129 @@ export default function Match() {
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-peach-light border border-peach
-                        rounded-lg px-2.5 py-1 text-xs text-amber-700 font-medium">
-          ● ao vivo
-        </div>
-      </div>
-
-      <div className="flex-1 px-4 py-4 space-y-3 overflow-y-auto">
-
-        {/* Time A */}
-        <TeamCard
-          label="Time A"
-          color="sage"
-          players={teamAPlayers}
-        />
-
-        {/* VS + botão embaralhar */}
-        <div className="flex items-center gap-3 text-xs text-stone-300">
-          <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700" />
+        <div className="flex items-center gap-1.5">
           <button
-            onClick={handleShuffle}
-            className="flex items-center gap-1 bg-white dark:bg-stone-800
-                       border border-sand dark:border-stone-600
-                       rounded-full px-3 py-1 text-xs text-stone-500 dark:text-stone-400
-                       hover:border-sage hover:text-sage-dark transition-colors"
-            title="Misturar times de forma equilibrada"
+            onClick={() => setMode('confirmResetRoundsOut')}
+            className="text-xs text-stone-400 dark:text-stone-500 underline mr-1"
+            title="Zerar contagem de partidas fora"
           >
-            🔀 misturar
+            zerar fora
           </button>
-          <div className="flex-1 h-px bg-stone-200 dark:bg-stone-700" />
+          <span className="flex items-center gap-1.5 bg-peach-light border border-peach
+                           rounded-lg px-2.5 py-1 text-xs text-amber-700 font-medium">
+            ● ao vivo
+          </span>
         </div>
+      </div>
 
-        {/* Time B */}
-        <TeamCard
-          label="Time B"
-          color="sky"
-          players={teamBPlayers}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+
+        <FieldTeams
+          teamA={teamA}
+          teamB={teamB}
+          onEditCurrent={() => setMode('editingCurrent')}
+          onShuffle={handleShuffle}
         />
 
-        {/* Fila de espera */}
-        <WaitingQueue players={waitingPlayers} roundsOut={roundsOut} />
+        {nexts.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
+              Próximos times
+            </p>
+            <div className="space-y-3">
+              {nexts.map((team, idx) => (
+                <NextTeamCard
+                  key={idx}
+                  index={idx}
+                  players={team}
+                  teamSize={session?.config.teamSize ?? 6}
+                  roundsOut={roundsOut}
+                  onEdit={() => {
+                    setEditingNextIdx(idx)
+                    setMode('editingNext')
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {nexts.length === 0 && (
+          <div className="bg-stone-100 dark:bg-stone-800 rounded-xl p-4 text-center">
+            <p className="text-xs text-stone-400">Sem times na fila — todos estão em campo.</p>
+          </div>
+        )}
 
       </div>
 
-      {/* Ações */}
       <div className="px-4 py-3 border-t border-stone-200 dark:border-stone-700
                       bg-stone-50 dark:bg-stone-800 space-y-2">
         <div className="flex gap-2">
           <button
             onClick={() => setMode('finishing')}
-            className="flex-1 bg-sage-dark text-white rounded-xl
-                       py-3 text-sm font-medium"
+            className="flex-1 bg-sage-dark text-white rounded-xl py-3 text-sm font-medium"
           >
             Encerrar partida
           </button>
           <button
-            onClick={() => setMode('editing')}
+            onClick={() => navigate(`/session/${code}/checkin`)}
             className="px-4 py-3 bg-white dark:bg-stone-700 border border-sand dark:border-stone-600
                        rounded-xl text-sm text-stone-600 dark:text-stone-300"
+            title="Ir para check-in"
           >
-            ✏️ Editar
+            👥
           </button>
         </div>
         <button
-          onClick={handleCancel}
-          className="w-full py-2 text-xs text-stone-400 underline"
+          onClick={() => setMode('confirmCancel')}
+          className="w-full py-1.5 text-xs text-stone-400 underline"
         >
           Cancelar partida (iniciada por engano)
         </button>
       </div>
 
-      {/* Modal: selecionar vencedor */}
       {mode === 'finishing' && (
         <FinishMatchModal
-          teamAPlayers={teamAPlayers}
-          teamBPlayers={teamBPlayers}
+          teamAPlayers={teamA}
+          teamBPlayers={teamB}
           onConfirm={handleFinish}
           onCancel={() => setMode('playing')}
         />
       )}
 
-      {/* Modal: editar times */}
-      {mode === 'editing' && (
+      {mode === 'editingCurrent' && (
         <EditTeamsModal
-          match={match}
-          allPlayers={[...teamAPlayers, ...teamBPlayers, ...waitingPlayers]}
-          onSave={handleSaveTeams}
+          title="Editar times em campo"
+          slots={['Time A', 'Time B']}
+          initialGroups={[teamA, teamB]}
+          extraPool={nexts.flat()}
+          onSave={handleSaveCurrentTeams}
           onCancel={() => setMode('playing')}
         />
       )}
 
-      {/* Pop-up de sucesso */}
-      {mode === 'success' && (
+      {mode === 'editingNext' && editingNextIdx !== null && (
+        <EditTeamsModal
+          title={`Editar ${editingNextIdx + 1}ª próxima`}
+          slots={[`${editingNextIdx + 1}ª próxima`]}
+          initialGroups={[nexts[editingNextIdx]]}
+          extraPool={[
+            ...teamA, ...teamB,
+            ...nexts.filter((_, i) => i !== editingNextIdx).flat()
+          ]}
+          onSave={(groups, pool) => handleSaveNextTeam(editingNextIdx, groups, pool)}
+          onCancel={() => { setMode('playing'); setEditingNextIdx(null) }}
+        />
+      )}
+
+      {mode === 'confirmCancel' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-6">
           <div className="bg-white dark:bg-stone-800 rounded-2xl p-6 w-full max-w-sm text-center shadow-xl">
-            <div className="w-14 h-14 bg-sage-light rounded-full flex items-center
-                            justify-center text-3xl mx-auto mb-3">
-              🏆
-            </div>
-            <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-1">
-              Partida encerrada!
+            <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-2">
+              Cancelar partida?
             </h2>
             <p className="text-sm text-stone-500 dark:text-stone-400 mb-5">
-              Vencedor: <span className="font-semibold text-sage-dark">{winnerLabel}</span>
+              A partida será cancelada e você voltará ao check-in. Os times serão mantidos para a próxima vez.
             </p>
             <div className="flex gap-3">
               <button
@@ -271,13 +361,41 @@ export default function Match() {
                 className="flex-1 py-2.5 rounded-xl border border-sand dark:border-stone-600
                            text-sm text-stone-600 dark:text-stone-300"
               >
-                Fechar
+                Voltar
               </button>
               <button
-                onClick={() => { setMode('playing'); navigate(nextMatchPath) }}
+                onClick={handleCancel}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium"
+              >
+                Cancelar partida
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mode === 'confirmResetRoundsOut' && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-6">
+          <div className="bg-white dark:bg-stone-800 rounded-2xl p-6 w-full max-w-sm text-center shadow-xl">
+            <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-2">
+              Zerar contagem de partidas fora?
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400 mb-5">
+              A contagem de partidas sem jogar de todos será zerada a partir desta partida.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setMode('playing')}
+                className="flex-1 py-2.5 rounded-xl border border-sand dark:border-stone-600
+                           text-sm text-stone-600 dark:text-stone-300"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={handleResetRoundsOut}
                 className="flex-1 py-2.5 rounded-xl bg-sage-dark text-white text-sm font-medium"
               >
-                Próxima partida →
+                Zerar
               </button>
             </div>
           </div>

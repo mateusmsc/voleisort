@@ -6,14 +6,14 @@ import { generateCode } from '../utils/session-code'
 export const useSessionStore = create(
   persist(
     (set, get) => ({
-      sessions: {},       // { [id]: Session }
+      sessions: {},
       activeSessionId: null,
 
       createSession(name, config = {}) {
         const id = uuid()
         const session = {
           id,
-          code: generateCode(),   // ex: "ABC123"
+          code: generateCode(),
           name,
           createdAt: new Date().toISOString(),
           config: {
@@ -106,7 +106,6 @@ export const useSessionStore = create(
         })
       },
 
-      // Importa uma sessão exportada de outro dispositivo
       importSession(sessionData) {
         const id = sessionData.id
         set(state => ({

@@ -4,8 +4,8 @@ import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { advanceQueue } from '../../logic/queue'
-import { calculateRatingDeltas } from '../../logic/rating'
 import { shuffleTeams } from '../../logic/balancing'
+import { computeRoundsOut } from '../../logic/rounds-out'
 import FieldTeams from './FieldTeams'
 import NextTeamCard from './NextTeamCard'
 import FinishMatchModal from './FinishMatchModal'
@@ -15,14 +15,17 @@ export default function Match() {
   const { code, matchId } = useParams()
   const navigate = useNavigate()
 
-  const match   = useMatchStore(s => s.getMatch(matchId))
-  const session = useSessionStore(s => s.getSessionByCode(code))
+  const match   = useMatchStore(s => s.matches[matchId] ?? null)
+  const session = useSessionStore(s =>
+    Object.values(s.sessions).find(sess => sess.code === code) ?? null
+  )
   const { finishMatch, cancelMatch, updateTeams, updateNextTeams, createMatch } = useMatchStore()
-  const { addMatch } = useSessionStore()
+  const { addMatch, setCheckedIn, finishSession } = useSessionStore()
   const { getPlayer, applyMatchResult } = usePlayerStore()
 
   const [mode, setMode] = useState('playing')
   const [editingNextIdx, setEditingNextIdx] = useState(null)
+  const [showLevels, setShowLevels] = useState(false)
 
   const teamA = useMemo(
     () => (match?.teams.A ?? []).map(id => getPlayer(id)).filter(Boolean),
@@ -40,7 +43,7 @@ export default function Match() {
   const roundsOut = useMemo(() => {
     if (!match || !session) return {}
     const resetFromRound = match.roundsOutResetAt ?? 0
-    const allMatches = useMatchStore.getState()
+    const finishedMatches = useMatchStore.getState()
       .getMatchesBySession(session.id)
       .filter(m =>
         m.id !== matchId &&
@@ -54,27 +57,25 @@ export default function Match() {
       ...(match.nextTeams ?? []).flat()
     ]
 
-    const counts = {}
-    for (const id of allIds) {
-      let consecutive = 0
-      for (let i = allMatches.length - 1; i >= 0; i--) {
-        const m = allMatches[i]
-        const played = [...m.teams.A, ...m.teams.B]
-        if (played.includes(id)) break
-        consecutive++
-      }
-      counts[id] = consecutive
-    }
-    return counts
+    // Participantes originais da partida atual: jogadores que estavam presentes
+    // quando a partida foi criada. São todos que já apareceram em pelo menos uma
+    // partida do histórico desta sessão OU estão nos times/fila da partida atual.
+    // Jogadores que chegaram via check-in tardio não estarão em nenhuma partida
+    // histórica, por isso computeRoundsOut os trata como roundsOut=0.
+    const allHistoricalIds = new Set(
+      finishedMatches.flatMap(m => [...m.teams.A, ...m.teams.B])
+    )
+    const originalParticipantIds = allIds.filter(id => allHistoricalIds.has(id))
+
+    return computeRoundsOut(allIds, finishedMatches, originalParticipantIds)
   }, [match, session, matchId])
 
-  function handleFinish(winner) {
+  async function handleFinish(winner) {
     const winners = winner === 'A' ? teamA : teamB
     const losers  = winner === 'A' ? teamB : teamA
 
-    const deltas = calculateRatingDeltas(winners, losers)
-    applyMatchResult(winners.map(p => p.id), losers.map(p => p.id), deltas)
-    finishMatch(matchId, winner)
+    await applyMatchResult(winners.map(p => p.id), losers.map(p => p.id))
+    await finishMatch(matchId, winner)
 
     const { newOpponent, newNextTeams } = advanceQueue(
       winners, losers, nexts,
@@ -82,71 +83,58 @@ export default function Match() {
     )
 
     const nextRound = (match.round ?? 1) + 1
-    const nextMatch = createMatch(
+    const nextMatch = await createMatch(
       session.id,
       nextRound,
       { A: winners.map(p => p.id), B: newOpponent.map(p => p.id) },
       newNextTeams.map(t => t.map(p => p.id)),
       match.roundsOutResetAt
     )
-    addMatch(session.id, nextMatch.id)
+    await addMatch(session.id, nextMatch.id)
     navigate(`/session/${code}/match/${nextMatch.id}`)
   }
 
-  function handleShuffle() {
+  async function handleShuffle() {
     const { teamA: newA, teamB: newB } = shuffleTeams(teamA, teamB, 3)
-    updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
+    await updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
   }
 
-  function handleSaveCurrentTeams([newA, newB], newPool) {
-    updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
-    // Reconstrói nextTeams a partir do pool retornado pelo modal.
-    // O pool é a lista plana de jogadores que ficaram fora dos times A e B.
-    // Era nexts.flat() antes da edição; agora pode ter jogadores diferentes.
+  async function handleSaveCurrentTeams([newA, newB], newPool) {
+    await updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
     if (newPool !== undefined) {
       const teamSize = session.config.teamSize
-      // Reconstrói usando os mesmos tamanhos de equipe das próximas originais
       const poolIds = [...newPool.map(p => p.id)]
       const reconstructed = nexts.map(origTeam => {
         const chunk = poolIds.splice(0, origTeam.length)
         return chunk
       }).filter(t => t.length > 0)
-      // Sobras além das próximas originais
       while (poolIds.length > 0) {
         reconstructed.push(poolIds.splice(0, teamSize))
       }
-      updateNextTeams(matchId, reconstructed)
+      await updateNextTeams(matchId, reconstructed)
     }
     setMode('playing')
   }
 
-  function handleSaveNextTeam(idx, [newTeam], newPool) {
+  async function handleSaveNextTeam(idx, [newTeam], newPool) {
     const teamSize = session.config.teamSize
 
     if (newPool !== undefined) {
-      // Pool contém: teamA + teamB + outras próximas (todos exceto a próxima editada)
-      // Detectar trocas comparando estados: quem saiu do campo foi para a próxima,
-      // quem saiu da próxima foi para o campo.
       const origNextTeam = nexts[idx].map(p => p.id)
       const newNextTeamIds = newTeam.map(p => p.id)
       const poolIds = newPool.map(p => p.id)
 
-      // Jogadores que estavam na próxima editada mas agora estão no pool = foram para o campo
       const movedToPool = origNextTeam.filter(id => !newNextTeamIds.includes(id))
-      // Jogadores que estavam no pool mas agora estão na próxima = vieram do campo/outra próxima
       const movedFromPool = newNextTeamIds.filter(id => !origNextTeam.includes(id))
 
       const onFieldAll = new Set([...match.teams.A, ...match.teams.B])
 
-      // Para cada jogador que veio do pool para a próxima, verificar se era do campo
       let newTeamAIds = [...match.teams.A]
       let newTeamBIds = [...match.teams.B]
       let fieldChanged = false
 
       for (const newcomerId of movedFromPool) {
         if (onFieldAll.has(newcomerId)) {
-          // Este jogador era do campo e foi para a próxima: substituir no campo pelo que saiu da próxima
-          // Encontrar quem da próxima foi para o pool no lugar deste jogador de campo
           const replacedByQueue = movedToPool[movedFromPool.indexOf(newcomerId)]
           if (replacedByQueue) {
             newTeamAIds = newTeamAIds.map(id => id === newcomerId ? replacedByQueue : id)
@@ -157,10 +145,9 @@ export default function Match() {
       }
 
       if (fieldChanged) {
-        updateTeams(matchId, { A: newTeamAIds, B: newTeamBIds })
+        await updateTeams(matchId, { A: newTeamAIds, B: newTeamBIds })
       }
 
-      // Reconstituir as outras próximas a partir dos ids do pool que não são do campo
       const updatedFieldIds = new Set([...newTeamAIds, ...newTeamBIds])
       const otherQueueIds = poolIds.filter(id => !updatedFieldIds.has(id))
 
@@ -173,32 +160,33 @@ export default function Match() {
         reconstructedOthers.push(remaining.splice(0, teamSize))
       }
 
-      // Inserir a próxima editada na posição correta
       reconstructedOthers.splice(idx, 0, newNextTeamIds)
-      updateNextTeams(matchId, reconstructedOthers.filter(t => t.length > 0))
+      await updateNextTeams(matchId, reconstructedOthers.filter(t => t.length > 0))
     } else {
       const updatedNexts = nexts.map((team, i) => i === idx ? newTeam : team)
-      updateNextTeams(matchId, updatedNexts.map(t => t.map(p => p.id)))
+      await updateNextTeams(matchId, updatedNexts.map(t => t.map(p => p.id)))
     }
     setMode('playing')
     setEditingNextIdx(null)
   }
 
-  function handleCancel() {
-    cancelMatch(matchId)
+  async function handleCancel() {
+    await cancelMatch(matchId)
     navigate(`/session/${code}/checkin`)
   }
 
-  function handleResetRoundsOut() {
-    useMatchStore.setState(state => ({
-      matches: {
-        ...state.matches,
-        [matchId]: {
-          ...state.matches[matchId],
-          roundsOutResetAt: (match.round ?? 1) + 1,
-        },
-      },
-    }))
+  async function handleFinishSession() {
+    try {
+      await cancelMatch(matchId)
+    } catch (_) { /* partida já cancelada ou inválida — ignorar */ }
+    await setCheckedIn(session.id, [])
+    await finishSession(session.id)
+    navigate('/')
+  }
+
+  async function handleResetRoundsOut() {
+    const { updateRoundsOutResetAt } = useMatchStore.getState()
+    await updateRoundsOutResetAt(matchId, (match.round ?? 1) + 1)
     setMode('playing')
   }
 
@@ -270,6 +258,8 @@ export default function Match() {
           teamB={teamB}
           onEditCurrent={() => setMode('editingCurrent')}
           onShuffle={handleShuffle}
+          showLevels={showLevels}
+          onToggleLevels={() => setShowLevels(s => !s)}
         />
 
         {nexts.length > 0 && (
@@ -285,6 +275,7 @@ export default function Match() {
                   players={team}
                   teamSize={session?.config.teamSize ?? 6}
                   roundsOut={roundsOut}
+                  showLevels={showLevels}
                   onEdit={() => {
                     setEditingNextIdx(idx)
                     setMode('editingNext')
@@ -306,10 +297,10 @@ export default function Match() {
       <div className="px-4 py-3 border-t border-stone-200 dark:border-stone-700
                       bg-stone-50 dark:bg-stone-800">
         <button
-          onClick={() => setMode('confirmCancel')}
+          onClick={() => setMode('confirmFinishSession')}
           className="w-full py-1.5 text-xs text-stone-400 underline"
         >
-          Cancelar partida (iniciada por engano)
+          Finalizar sessão
         </button>
       </div>
 
@@ -347,14 +338,15 @@ export default function Match() {
         />
       )}
 
-      {mode === 'confirmCancel' && (
+      {mode === 'confirmFinishSession' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-6">
           <div className="bg-white dark:bg-stone-800 rounded-2xl p-6 w-full max-w-sm text-center shadow-xl">
             <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-2">
-              Cancelar partida?
+              Finalizar sessão?
             </h2>
             <p className="text-sm text-stone-500 dark:text-stone-400 mb-5">
-              A partida será cancelada e você voltará ao check-in. Os times serão mantidos para a próxima vez.
+              Finalizar a sessão de hoje? As partidas serão encerradas e os times
+              serão remontados na próxima vez com base nos presentes.
             </p>
             <div className="flex gap-3">
               <button
@@ -365,10 +357,10 @@ export default function Match() {
                 Voltar
               </button>
               <button
-                onClick={handleCancel}
+                onClick={handleFinishSession}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium"
               >
-                Cancelar partida
+                Finalizar sessão
               </button>
             </div>
           </div>

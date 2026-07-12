@@ -1,85 +1,86 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
+import { matchService } from '../services/matchService'
 
-export const useMatchStore = create(
-  persist(
-    (set, get) => ({
-      matches: {},
+export const useMatchStore = create((set, get) => ({
+  matches: {},
 
-      createMatch(sessionId, round, teams, nextTeams = [], roundsOutResetAt = undefined) {
-        const id = uuid()
-        const match = {
-          id,
-          sessionId,
-          round,
-          status: 'ongoing',
-          teams,
-          nextTeams,
-          winner: null,
-          startedAt: new Date().toISOString(),
-          finishedAt: null,
-          ...(roundsOutResetAt !== undefined ? { roundsOutResetAt } : {}),
-        }
-        set(state => ({ matches: { ...state.matches, [id]: match } }))
-        return match
+  async createMatch(sessionId, round, teams, nextTeams = [], roundsOutResetAt = undefined) {
+    const match = {
+      id: uuid(),
+      sessionId,
+      round,
+      status: 'ongoing',
+      teams,
+      nextTeams,
+      winner: null,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      ...(roundsOutResetAt !== undefined ? { roundsOutResetAt } : {}),
+    }
+    set(state => ({ matches: { ...state.matches, [match.id]: match } }))
+    await matchService.create(match)
+    return match
+  },
+
+  async updateTeams(matchId, teams) {
+    set(state => ({
+      matches: { ...state.matches, [matchId]: { ...state.matches[matchId], teams } },
+    }))
+    await matchService.updateTeams(matchId, teams)
+  },
+
+  async updateNextTeams(matchId, nextTeams) {
+    set(state => ({
+      matches: { ...state.matches, [matchId]: { ...state.matches[matchId], nextTeams } },
+    }))
+    await matchService.updateNextTeams(matchId, nextTeams)
+  },
+
+  async finishMatch(matchId, winner) {
+    const finishedAt = new Date().toISOString()
+    set(state => ({
+      matches: {
+        ...state.matches,
+        [matchId]: { ...state.matches[matchId], status: 'finished', winner, finishedAt },
       },
+    }))
+    await matchService.finish(matchId, winner)
+  },
 
-      updateTeams(matchId, teams) {
-        set(state => ({
-          matches: {
-            ...state.matches,
-            [matchId]: { ...state.matches[matchId], teams },
-          },
-        }))
+  async cancelMatch(matchId) {
+    const finishedAt = new Date().toISOString()
+    set(state => ({
+      matches: {
+        ...state.matches,
+        [matchId]: { ...state.matches[matchId], status: 'cancelled', finishedAt },
       },
+    }))
+    await matchService.cancel(matchId)
+  },
 
-      updateNextTeams(matchId, nextTeams) {
-        set(state => ({
-          matches: {
-            ...state.matches,
-            [matchId]: { ...state.matches[matchId], nextTeams },
-          },
-        }))
+  async updateRoundsOutResetAt(matchId, round) {
+    set(state => ({
+      matches: {
+        ...state.matches,
+        [matchId]: { ...state.matches[matchId], roundsOutResetAt: round },
       },
+    }))
+    await matchService.updateRoundsOutResetAt(matchId, round)
+  },
 
-      finishMatch(matchId, winner) {
-        set(state => ({
-          matches: {
-            ...state.matches,
-            [matchId]: {
-              ...state.matches[matchId],
-              status: 'finished',
-              winner,
-              finishedAt: new Date().toISOString(),
-            },
-          },
-        }))
-      },
+  getMatch(id)              { return get().matches[id] ?? null },
 
-      cancelMatch(matchId) {
-        set(state => ({
-          matches: {
-            ...state.matches,
-            [matchId]: {
-              ...state.matches[matchId],
-              status: 'cancelled',
-              finishedAt: new Date().toISOString(),
-            },
-          },
-        }))
-      },
+  getMatchesBySession(sessionId) {
+    return Object.values(get().matches)
+      .filter(m => m.sessionId === sessionId)
+      .sort((a, b) => a.round - b.round)
+  },
 
-      getMatch(id) {
-        return get().matches[id] ?? null
-      },
-
-      getMatchesBySession(sessionId) {
-        return Object.values(get().matches)
-          .filter(m => m.sessionId === sessionId)
-          .sort((a, b) => a.round - b.round)
-      },
-    }),
-    { name: 'volei-matches' }
-  )
-)
+  // Chamado pelo boot para hidratar com dados do Supabase
+  _hydrate(matches) {
+    const map = {}
+    for (const m of matches) map[m.id] = m
+    set({ matches: map })
+  },
+}))

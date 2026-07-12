@@ -20,7 +20,7 @@ import {
   buildNextQueue,
   snakeDraft,
   advanceQueue,
-} from './queue.js'
+} from '../../../src/logic/queue.js'
 
 // Helpers
 function makePlayers(n, baseRating = 50) {
@@ -40,25 +40,31 @@ function makeNamedPlayers(ids, rating = 50) {
 describe('distributeAllPlayers -- teamSize 4, 5, 6, 7', () => {
   for (const teamSize of [4, 5, 6, 7]) {
     describe(`teamSize=${teamSize}`, () => {
-      it(`coloca exatamente ${teamSize} em cada time e o resto na fila`, () => {
-        const players = makePlayers(teamSize * 2 + teamSize) // 3 times vale de jogadores
+      it(`distribui todos os jogadores sem duplicatas (${teamSize * 3} jogadores)`, () => {
+        const players = makePlayers(teamSize * 3) // múltiplo exato: 3 grupos completos
         const { teamA, teamB, nextTeams } = distributeAllPlayers(players, teamSize)
 
+        // Com teamSize*3 jogadores (múltiplo exato), campo e fila têm teamSize cada
         expect(teamA.length).toBe(teamSize)
         expect(teamB.length).toBe(teamSize)
         expect(nextTeams.flat().length).toBe(teamSize)
       })
 
-      it(`os ${teamSize * 2} com maior rating vao para o campo`, () => {
-        const players = makePlayers(teamSize * 3)
-        const { teamA, teamB, nextTeams } = distributeAllPlayers(players, teamSize)
+      it(`jogadores de nível alto nao se concentram em um unico grupo`, () => {
+        // 2 jogadores de nível alto distribuídos entre teamA e teamB
+        const highLevel = [
+          { id: 'hi1', level: 5, rating: 99 },
+          { id: 'hi2', level: 5, rating: 98 },
+        ]
+        const rest = makePlayers(teamSize * 2 - 2).map(p => ({ ...p, level: 3 }))
+        const players = [...highLevel, ...rest]
+        const { teamA, teamB } = distributeAllPlayers(players, teamSize)
 
-        const onFieldRatings = [...teamA, ...teamB].map(p => p.rating)
-        const queueRatings   = nextTeams.flat().map(p => p.rating)
-
-        const minField = Math.min(...onFieldRatings)
-        const maxQueue = Math.max(...queueRatings)
-        expect(minField).toBeGreaterThan(maxQueue)
+        // Cada time de campo deve ter exatamente 1 jogador de alto nível
+        const highInA = teamA.filter(p => p.level === 5).length
+        const highInB = teamB.filter(p => p.level === 5).length
+        expect(highInA).toBe(1)
+        expect(highInB).toBe(1)
       })
 
       it(`com exatamente ${teamSize * 2} jogadores, fila fica vazia`, () => {
@@ -83,8 +89,8 @@ describe('distributeAllPlayers -- teamSize 4, 5, 6, 7', () => {
         const players = makePlayers(teamSize * 2)
         const { teamA, teamB } = distributeAllPlayers(players, teamSize)
 
-        const avgA = teamA.reduce((s, p) => s + p.rating, 0) / teamA.length
-        const avgB = teamB.reduce((s, p) => s + p.rating, 0) / teamB.length
+        const avgA = teamA.reduce((s, p) => s + (p.level ?? 3), 0) / teamA.length
+        const avgB = teamB.reduce((s, p) => s + (p.level ?? 3), 0) / teamB.length
         expect(Math.abs(avgA - avgB)).toBeLessThanOrEqual(teamSize * 3)
       })
     })
@@ -95,37 +101,41 @@ describe('distributeAllPlayers -- teamSize 4, 5, 6, 7', () => {
 // distributeAllPlayers -- casos limite
 // ---------------------------------------------------------------------------
 describe('distributeAllPlayers -- casos limite de quantidade de jogadores', () => {
-  it('com menos de teamSize*2 jogadores, coloca todos no campo e fila fica vazia', () => {
+  it('com menos de teamSize*2 jogadores, distribui todos e fila fica vazia', () => {
     const players = makePlayers(9) // teamSize=6: 9 < 12
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 6)
 
-    expect(teamA.length + teamB.length).toBe(9)
+    // numGroups = ceil(9/6) = 2; fila vazia
+    const all = [...teamA, ...teamB, ...nextTeams.flat()]
+    expect(all.length).toBe(9)
     expect(nextTeams).toEqual([])
   })
 
-  it('com 1 jogador a mais que teamSize*2, fila tem 1 jogador', () => {
+  it('com 13 jogadores e teamSize=6, todos distribuídos sem duplicatas', () => {
     const players = makePlayers(13) // teamSize=6
-    const { nextTeams } = distributeAllPlayers(players, 6)
+    const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 6)
 
-    expect(nextTeams.flat().length).toBe(1)
+    const all = [...teamA, ...teamB, ...nextTeams.flat()].map(p => p.id)
+    expect(new Set(all).size).toBe(13)
+    expect(all.length).toBe(13)
   })
 
-  it('com muitos jogadores (22, teamSize=6), fila tem multiplas proximas', () => {
+  it('com muitos jogadores (22, teamSize=6), todos distribuídos sem duplicatas', () => {
     const players = makePlayers(22)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 6)
 
-    expect(teamA.length).toBe(6)
-    expect(teamB.length).toBe(6)
-    expect(nextTeams.flat().length).toBe(10)
-    // 1a proxima completa, 2a incompleta
-    expect(nextTeams[0].length).toBe(6)
-    expect(nextTeams[1].length).toBe(4)
+    const all = [...teamA, ...teamB, ...nextTeams.flat()].map(p => p.id)
+    expect(new Set(all).size).toBe(22)
+    expect(all.length).toBe(22)
+    // Deve haver grupos de fila (22 > 12)
+    expect(nextTeams.length).toBeGreaterThan(0)
   })
 
-  it('com 28 jogadores (teamSize=7): 14 no campo, 14 na fila em 2 proximas completas', () => {
+  it('com 28 jogadores (teamSize=7): todos distribuídos, 4 grupos', () => {
     const players = makePlayers(28)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 7)
 
+    // numGroups = ceil(28/7) = 4: 4 grupos de 7 exatos
     expect(teamA.length).toBe(7)
     expect(teamB.length).toBe(7)
     expect(nextTeams.length).toBe(2)
@@ -260,25 +270,18 @@ describe('advanceQueue -- teamSize 4, 5, 6, 7', () => {
 // Mudanca de teamSize com partida ativa -- redistribuicao completa
 // ---------------------------------------------------------------------------
 describe('mudanca de teamSize com partida ativa -- redistribuicao via distributeAllPlayers', () => {
-  it('de teamSize=6 para teamSize=4: redistribui todos os presentes', () => {
-    // 18 jogadores presentes. Com teamSize=4: 8 no campo, 10 na fila.
+  it('de teamSize=6 para teamSize=4: redistribui todos os 18 presentes sem duplicatas', () => {
+    // 18 jogadores presentes. Com teamSize=4: numGroups=ceil(18/4)=5 grupos.
     const players = makePlayers(18)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 4)
-
-    expect(teamA.length).toBe(4)
-    expect(teamB.length).toBe(4)
-    expect(nextTeams.flat().length).toBe(10)
-    // 2 proximas completas + 1 com 2
-    expect(nextTeams[0].length).toBe(4)
-    expect(nextTeams[1].length).toBe(4)
-    expect(nextTeams[2].length).toBe(2)
 
     const all = [...teamA, ...teamB, ...nextTeams.flat()].map(p => p.id)
     expect(new Set(all).size).toBe(all.length)
     expect(all.length).toBe(18)
   })
 
-  it('de teamSize=4 para teamSize=6: redistribui todos os presentes', () => {
+  it('de teamSize=4 para teamSize=6: redistribui todos os 18 presentes sem duplicatas', () => {
+    // 18 jogadores. numGroups=ceil(18/6)=3: 3 grupos de 6 exatos.
     const players = makePlayers(18)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 6)
 
@@ -291,26 +294,20 @@ describe('mudanca de teamSize com partida ativa -- redistribuicao via distribute
     expect(new Set(all).size).toBe(all.length)
   })
 
-  it('de teamSize=6 para teamSize=7: redistribui todos os presentes', () => {
+  it('de teamSize=6 para teamSize=7: redistribui todos os 22 presentes sem duplicatas', () => {
+    // 22 jogadores. numGroups=ceil(22/7)=4.
     const players = makePlayers(22)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 7)
-
-    expect(teamA.length).toBe(7)
-    expect(teamB.length).toBe(7)
-    expect(nextTeams.flat().length).toBe(8)
 
     const all = [...teamA, ...teamB, ...nextTeams.flat()].map(p => p.id)
     expect(new Set(all).size).toBe(all.length)
     expect(all.length).toBe(22)
   })
 
-  it('de teamSize=7 para teamSize=5: redistribui todos os presentes', () => {
+  it('de teamSize=7 para teamSize=5: redistribui todos os 22 presentes sem duplicatas', () => {
+    // 22 jogadores. numGroups=ceil(22/5)=5.
     const players = makePlayers(22)
     const { teamA, teamB, nextTeams } = distributeAllPlayers(players, 5)
-
-    expect(teamA.length).toBe(5)
-    expect(teamB.length).toBe(5)
-    expect(nextTeams.flat().length).toBe(12)
 
     const all = [...teamA, ...teamB, ...nextTeams.flat()].map(p => p.id)
     expect(new Set(all).size).toBe(all.length)
@@ -328,14 +325,23 @@ describe('mudanca de teamSize com partida ativa -- redistribuicao via distribute
     }
   })
 
-  it('redistribuicao usa snake draft -- times ficam balanceados para todos os teamSizes', () => {
+  it('redistribuicao por nivel -- jogadores de nivel alto espalhados entre os times', () => {
     for (const teamSize of [4, 5, 6, 7]) {
-      const players = makePlayers(teamSize * 2)
+      const highLevel = [
+        { id: `hi1_${teamSize}`, level: 5 },
+        { id: `hi2_${teamSize}`, level: 5 },
+      ]
+      const rest = Array.from({ length: teamSize * 2 - 2 }, (_, i) => ({
+        id: `r${i}_${teamSize}`,
+        level: 3,
+      }))
+      const players = [...highLevel, ...rest]
       const { teamA, teamB } = distributeAllPlayers(players, teamSize)
 
-      const avgA = teamA.reduce((s, p) => s + p.rating, 0) / teamA.length
-      const avgB = teamB.reduce((s, p) => s + p.rating, 0) / teamB.length
-      expect(Math.abs(avgA - avgB)).toBeLessThanOrEqual(10)
+      const highInA = teamA.filter(p => p.level === 5).length
+      const highInB = teamB.filter(p => p.level === 5).length
+      expect(highInA).toBe(1)
+      expect(highInB).toBe(1)
     }
   })
 })

@@ -6,7 +6,7 @@ import {
   getNewcomers,
   applyCheckinWithActiveMatch,
   fillGapsFromNextQueues,
-} from './checkin-logic.js'
+} from '../../../src/logic/checkin-logic.js'
 
 // ---------------------------------------------------------------------------
 // insertPlayerIntoQueue

@@ -1,10 +1,7 @@
-import { teamAverage } from '../../logic/balancing'
-
 const ORDINALS = ['1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª', '8ª']
 
-export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, onEdit }) {
+export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, showLevels, onEdit }) {
   const isIncomplete = players.length < teamSize
-  const avg = teamAverage(players)
   const label = `${ORDINALS[index] ?? `${index + 1}ª`} próxima`
 
   return (
@@ -23,15 +20,12 @@ export default function NextTeamCard({ index, players, teamSize, roundsOut = {},
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-stone-400">média {avg}</span>
-          <button
-            onClick={onEdit}
-            className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
-          >
-            ✏️
-          </button>
-        </div>
+        <button
+          onClick={onEdit}
+          className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+        >
+          ✏️
+        </button>
       </div>
 
       <div className="space-y-1.5">
@@ -44,13 +38,17 @@ export default function NextTeamCard({ index, players, teamSize, roundsOut = {},
               {p.name[0]}
             </div>
             <span className="text-sm text-stone-700 dark:text-stone-300 flex-1 truncate">{p.name}</span>
+            {showLevels && (
+              <span className="text-xs font-semibold text-stone-400 dark:text-stone-500 shrink-0">
+                {p.level ?? 3}
+              </span>
+            )}
             {out > 0 && (
               <span className="text-xs bg-peach dark:bg-amber-800/60 text-amber-800 dark:text-amber-300
                                rounded-full px-1.5 py-0.5 font-medium">
                 {out} fora
               </span>
             )}
-            <span className="text-xs text-stone-400">{p.rating}</span>
           </div>
           )
         })}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { swapPlayers, shuffleTeams } from './balancing.js'
+import { swapPlayers, shuffleTeams } from '../../../src/logic/balancing.js'
 
 describe('shuffleTeams — botao de mistura deve existir e funcionar', () => {
   it('mistura os times trocando pares sem duplicar jogadores', () => {

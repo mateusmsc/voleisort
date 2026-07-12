@@ -1,14 +1,65 @@
-import { teamAverage } from './balancing'
+import { DEFAULT_LEVEL, HIGH_LEVEL_THRESHOLD } from '../utils/levels.js'
+
+export function levelSpreadDraft(allPlayers, teamSize) {
+  const numGroups = Math.max(2, Math.ceil(allPlayers.length / teamSize))
+  const groups    = Array.from({ length: numGroups }, () => [])
+
+  // Agrupa jogadores por nível (normaliza undefined/null para DEFAULT_LEVEL)
+  const byLevel = new Map()
+  for (const player of allPlayers) {
+    const lvl = player.level ?? DEFAULT_LEVEL
+    if (!byLevel.has(lvl)) byLevel.set(lvl, [])
+    byLevel.get(lvl).push(player)
+  }
+
+  // Ordena níveis do mais alto para o mais baixo
+  const sortedLevels = [...byLevel.keys()].sort((a, b) => b - a)
+
+  // Round-robin por nível: distribui cada nível entre os grupos.
+  // Critério de escolha do grupo destino (em ordem de prioridade):
+  //   1. Menor contagem deste nível no grupo (espalhamento)
+  //   2. Menor índice do grupo (desempate: campo tem prioridade)
+  // Respeitando a capacidade máxima de teamSize por grupo.
+  for (const lvl of sortedLevels) {
+    const players = byLevel.get(lvl)
+
+    for (const player of players) {
+      let bestGroup    = -1
+      let bestLvlCount = Infinity
+
+      for (let g = 0; g < numGroups; g++) {
+        if (groups[g].length >= teamSize) continue
+
+        const lvlCount = groups[g].filter(p => (p.level ?? DEFAULT_LEVEL) === lvl).length
+
+        const better =
+          bestGroup === -1 ||
+          lvlCount < bestLvlCount ||
+          (lvlCount === bestLvlCount && g < bestGroup)
+
+        if (better) {
+          bestGroup    = g
+          bestLvlCount = lvlCount
+        }
+      }
+
+      // Fallback: se todos os grupos estão cheios (não deve ocorrer), adiciona ao último
+      if (bestGroup === -1) bestGroup = numGroups - 1
+      groups[bestGroup].push(player)
+    }
+  }
+
+  return {
+    teamA:     groups[0],
+    teamB:     groups[1],
+    nextTeams: groups.slice(2),
+  }
+}
 
 export function distributeAllPlayers(allPlayers, teamSize) {
-  const sorted = [...allPlayers].sort((a, b) => b.rating - a.rating)
-  const inField = sorted.slice(0, teamSize * 2)
-  const rest    = sorted.slice(teamSize * 2)
-
-  const { teamA, teamB } = snakeDraft(inField, teamSize)
-  const nextTeams = buildNextQueue(rest, teamSize)
-
-  return { teamA, teamB, nextTeams }
+  const { teamA, teamB, nextTeams } = levelSpreadDraft(allPlayers, teamSize)
+  const rebalancedNext = rebalanceHighLevelPlayers(teamA, teamB, nextTeams, {})
+  return { teamA, teamB, nextTeams: rebalancedNext }
 }
 
 export function buildNextQueue(players, teamSize) {
@@ -89,65 +140,6 @@ export function advanceQueue(winners, losers, currentNext, teamSize, roundsOut, 
   return { newOpponent, newNextTeams }
 }
 
-function avg(players) {
-  if (!players.length) return 0
-  return Math.round(players.reduce((s, p) => s + p.rating, 0) / players.length)
-}
-
-export function buildChallenger(winners, losers, waiting, roundsOut, config) {
-  const { teamSize, maxRoundsOut, ratingDeltaThreshold } = config
-
-  const pool = [...losers, ...waiting]
-  const winnerAvg = teamAverage(winners)
-
-  const challenger = []
-  const remaining = [...pool]
-
-  while (challenger.length < teamSize && remaining.length > 0) {
-    const currentAvg = teamAverage(challenger)
-    const targetRating = winnerAvg * teamSize - currentAvg * challenger.length
-
-    const urgentPlayers = remaining.filter(
-      p => (roundsOut[p.id] ?? 0) >= maxRoundsOut
-    )
-
-    let chosen
-
-    if (urgentPlayers.length > 0) {
-      chosen = urgentPlayers.reduce((best, p) =>
-        Math.abs(p.rating - targetRating) < Math.abs(best.rating - targetRating)
-          ? p : best
-      )
-    } else {
-      const ideal = remaining.reduce((best, p) =>
-        Math.abs(p.rating - targetRating) < Math.abs(best.rating - targetRating)
-          ? p : best
-      )
-
-      const waitingCandidates = remaining.filter(p =>
-        waiting.includes(p) &&
-        Math.abs(p.rating - targetRating) <= (ratingDeltaThreshold ?? 10) + 10
-      )
-
-      if (waitingCandidates.length > 0) {
-        chosen = waitingCandidates.reduce((best, p) =>
-          (roundsOut[p.id] ?? 0) > (roundsOut[best.id] ?? 0) ? p : best
-        )
-      } else {
-        chosen = ideal
-      }
-    }
-
-    challenger.push(chosen)
-    remaining.splice(remaining.indexOf(chosen), 1)
-  }
-
-  return {
-    challenger,
-    newWaiting: remaining,
-  }
-}
-
 export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut) {
   const updated = {}
   for (const id of allCheckedInIds) {
@@ -158,4 +150,86 @@ export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut
     }
   }
   return updated
+}
+
+// ---------------------------------------------------------------------------
+// rebalanceHighLevelPlayers — Fase 4
+//
+// Corrige concentração de alto nível na fila após advanceQueue (FIFO puro).
+// Tenta mover um jogador de alto nível da 2ª+ próxima para a 1ª próxima
+// quando a 1ª não tem nenhum, trocando com o jogador de menor nível dela.
+//
+// Pré-condições para qualquer troca:
+//   1. Ambos teamA e teamB têm >= 1 jogador com level >= threshold
+//   2. A 1ª próxima NÃO tem nenhum jogador com level >= threshold
+//   3. Existe uma 2ª+ próxima com candidato (level >= threshold, roundsOut < 2)
+//
+// Critério de aceitação da troca (Opção A):
+//   A diferença de médias entre a 1ª próxima resultante e a média dos times
+//   em campo não deve aumentar em relação à diferença atual.
+// ---------------------------------------------------------------------------
+export function rebalanceHighLevelPlayers(
+  teamA,
+  teamB,
+  nextTeams,
+  roundsOut,
+  threshold = HIGH_LEVEL_THRESHOLD,
+) {
+  if (nextTeams.length < 2) return nextTeams
+
+  const isHigh = p => (p.level ?? DEFAULT_LEVEL) >= threshold
+
+  // Pré-condição 1: ambos os times em campo têm >= 1 alto nível
+  if (!teamA.some(isHigh) || !teamB.some(isHigh)) return nextTeams
+
+  const [first, ...rest] = nextTeams
+
+  // Pré-condição 2: 1ª próxima não tem nenhum alto nível
+  if (first.some(isHigh)) return nextTeams
+
+  // Média dos times em campo (referência de equilíbrio)
+  const allField  = [...teamA, ...teamB]
+  const fieldAvg  = allField.reduce((s, p) => s + (p.level ?? DEFAULT_LEVEL), 0) / allField.length
+  const firstAvg  = () => first.reduce((s, p) => s + (p.level ?? DEFAULT_LEVEL), 0) / first.length
+  const currentDiff = Math.abs(firstAvg() - fieldAvg)
+
+  // Busca o melhor candidato na 2ª+ próxima: alto nível, roundsOut < 2
+  let candidatePlayer = null
+  let candidateGroupIdx = -1   // índice em `rest` (0 = 2ª próxima original)
+
+  for (let gi = 0; gi < rest.length; gi++) {
+    for (const p of rest[gi]) {
+      if (!isHigh(p)) continue
+      if ((roundsOut[p.id] ?? 0) >= 2) continue
+      candidatePlayer   = p
+      candidateGroupIdx = gi
+      break
+    }
+    if (candidatePlayer) break
+  }
+
+  // Pré-condição 3: existe candidato elegível
+  if (!candidatePlayer) return nextTeams
+
+  // Parceiro na 1ª próxima: jogador de menor nível (não-alto preferido)
+  const partner = [...first].sort(
+    (a, b) => (a.level ?? DEFAULT_LEVEL) - (b.level ?? DEFAULT_LEVEL)
+  )[0]
+
+  // Simula a troca e verifica equilíbrio (Opção A)
+  const newFirst = first.map(p => p.id === partner.id ? candidatePlayer : p)
+  const newFirstAvg = newFirst.reduce((s, p) => s + (p.level ?? DEFAULT_LEVEL), 0) / newFirst.length
+  const newDiff = Math.abs(newFirstAvg - fieldAvg)
+
+  // Aceita somente se a diferença não aumentar
+  if (newDiff > currentDiff + 1e-9) return nextTeams
+
+  // Efetua a troca
+  const newRest = rest.map((group, gi) =>
+    gi === candidateGroupIdx
+      ? group.map(p => p.id === candidatePlayer.id ? partner : p)
+      : group
+  )
+
+  return [newFirst, ...newRest]
 }

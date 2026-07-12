@@ -1,28 +1,31 @@
 import { useState } from 'react'
-import { LEVELS, DEFAULT_LEVEL } from '../../utils/levels'
+import { LEVELS } from '../../utils/levels'
 
-export default function AddPlayerModal({ onConfirm, onCancel, existingNames = [] }) {
-  const [name, setName] = useState('')
-  const [level, setLevel] = useState(DEFAULT_LEVEL)
+export default function EditPlayerModal({ player, existingNames = [], onConfirm, onCancel }) {
+  const [name, setName] = useState(player.name)
+  const [level, setLevel] = useState(player.level ?? 3)
   const [error, setError] = useState('')
 
   const normalizedExisting = existingNames.map(n => n.trim().toLowerCase())
 
   function handleConfirm() {
     const trimmed = name.trim()
-    if (!trimmed) return
-    if (normalizedExisting.includes(trimmed.toLowerCase())) {
-      setError(`Já existe um jogador com o nome "${trimmed}" nesta sessão.`)
+    if (!trimmed) {
+      setError('O nome não pode estar vazio.')
       return
     }
-    onConfirm(trimmed, level)
+    if (normalizedExisting.includes(trimmed.toLowerCase())) {
+      setError(`Já existe outro jogador com o nome "${trimmed}" nesta sessão.`)
+      return
+    }
+    onConfirm({ name: trimmed, level })
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
       <div className="bg-white dark:bg-stone-800 rounded-t-2xl w-full max-w-md p-6 pb-10">
         <h2 className="text-base font-medium text-stone-800 dark:text-stone-100 mb-4">
-          Adicionar jogador
+          Editar jogador
         </h2>
 
         <input
@@ -59,15 +62,11 @@ export default function AddPlayerModal({ onConfirm, onCancel, existingNames = []
           </div>
         </div>
 
-        {error ? (
+        {error && (
           <p className="text-xs text-red-500 mb-4">{error}</p>
-        ) : (
-          <p className="text-xs text-stone-400 mb-4">
-            O jogador será associado apenas a esta sessão.
-          </p>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 mt-4">
           <button
             onClick={onCancel}
             className="flex-1 py-2.5 rounded-xl border border-sand dark:border-stone-600
@@ -81,7 +80,7 @@ export default function AddPlayerModal({ onConfirm, onCancel, existingNames = []
             className="flex-1 py-2.5 rounded-xl bg-sage-dark text-white
                        text-sm font-medium disabled:opacity-40"
           >
-            Adicionar
+            Salvar
           </button>
         </div>
       </div>

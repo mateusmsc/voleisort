@@ -3,19 +3,41 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { useMatchStore } from '../../store/useMatchStore'
+import { useShallow } from 'zustand/react/shallow'
 import { distributeAllPlayers } from '../../logic/queue'
 import { applyCheckinWithActiveMatch, insertPlayerIntoQueue } from '../../logic/checkin-logic'
 import PlayerRow from '../../components/PlayerRow'
 import AddPlayerModal from './AddPlayerModal'
+import EditPlayerModal from './EditPlayerModal'
 
 export default function Checkin() {
   const { code } = useParams()
   const navigate = useNavigate()
 
-  const session = useSessionStore(s => s.getSessionByCode(code))
-  const { getAllPlayers, addPlayer, getPlayer } = usePlayerStore()
+  // Selectors reativos — observam o estado diretamente, sem chamar get() interno
+  const session = useSessionStore(s =>
+    Object.values(s.sessions).find(sess => sess.code === code) ?? null
+  )
+  const sessionId = session?.id ?? null
+
+  const sessionPlayers = usePlayerStore(
+    useShallow(s =>
+      (session?.playerIds ?? []).map(id => s.players[id]).filter(Boolean)
+    )
+  )
+
+  // activeMatch depende de sessionId — selector reativo sobre matches
+  const activeMatch = useMatchStore(s => {
+    if (!sessionId) return null
+    const found = Object.values(s.matches).find(
+      m => m.sessionId === sessionId && m.status === 'ongoing'
+    )
+    return found ?? null
+  })
+
+  const { getPlayer, addPlayer, updatePlayer } = usePlayerStore()
   const { setCheckedIn, addPlayerToSession, addMatch, updateSessionConfig } = useSessionStore()
-  const { createMatch, getMatchesBySession, updateNextTeams } = useMatchStore()
+  const { createMatch, updateNextTeams } = useMatchStore()
 
   const [search, setSearch] = useState('')
   const [checkedIn, setCheckedInLocal] = useState(
@@ -23,27 +45,15 @@ export default function Checkin() {
   )
   const [showAddModal, setShowAddModal] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
+  const [editingPlayer, setEditingPlayer] = useState(null)
 
-  const allPlayers = getAllPlayers()
-
-  const sessionPlayerIds = new Set(session?.playerIds ?? [])
   const sorted = useMemo(() => {
-    return [...allPlayers].sort((a, b) => {
-      const aIn = sessionPlayerIds.has(a.id) ? 0 : 1
-      const bIn = sessionPlayerIds.has(b.id) ? 0 : 1
-      return aIn - bIn || a.name.localeCompare(b.name)
-    })
-  }, [allPlayers, session?.playerIds])
+    return [...sessionPlayers].sort((a, b) => a.name.localeCompare(b.name))
+  }, [sessionPlayers])
 
   const filtered = sorted.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase())
   )
-
-  const activeMatch = useMemo(() => {
-    if (!session) return null
-    const matches = getMatchesBySession(session.id)
-    return matches.find(m => m.status === 'ongoing') ?? null
-  }, [session, getMatchesBySession])
 
   function toggleCheckin(playerId) {
     setCheckedInLocal(prev => {
@@ -71,8 +81,8 @@ export default function Checkin() {
     })
   }
 
-  function handleAddNewPlayer(name) {
-    const id = addPlayer(name)
+  async function handleAddNewPlayer(name, level) {
+    const id = await addPlayer(name, level)
     if (session) {
       addPlayerToSession(session.id, id)
     }
@@ -87,15 +97,8 @@ export default function Checkin() {
       const teamSize = session.config.teamSize
       const updatedNextTeams = insertPlayerIntoQueue(currentNextTeams, id, teamSize)
 
-      useMatchStore.setState(state => ({
-        matches: {
-          ...state.matches,
-          [activeMatch.id]: {
-            ...state.matches[activeMatch.id],
-            nextTeams: updatedNextTeams,
-          },
-        },
-      }))
+      const { updateNextTeams: updateNextTeamsAction } = useMatchStore.getState()
+      await updateNextTeamsAction(activeMatch.id, updatedNextTeams)
     }
   }
 
@@ -107,9 +110,15 @@ export default function Checkin() {
     })
   }
 
-  function handleStartMatch() {
+  async function handleEditPlayer({ name, level }) {
+    if (!editingPlayer) return
+    await updatePlayer(editingPlayer.id, { name, level })
+    setEditingPlayer(null)
+  }
+
+  async function handleStartMatch() {
     if (!session) return
-    const presentPlayers = allPlayers.filter(p => checkedIn.has(p.id))
+    const presentPlayers = sessionPlayers.filter(p => checkedIn.has(p.id))
 
     setCheckedIn(session.id, [...checkedIn])
 
@@ -119,19 +128,18 @@ export default function Checkin() {
 
       if (currentTeamSize !== activeTeamSize) {
         const { cancelMatch } = useMatchStore.getState()
-        cancelMatch(activeMatch.id)
+        await cancelMatch(activeMatch.id)
 
         const { teamA, teamB, nextTeams } = distributeAllPlayers(presentPlayers, currentTeamSize)
         const nextRound = activeMatch.round
-        // Ao mudar teamSize com partida ativa, zera contagem de rounds de fora
-        const newMatch = createMatch(
+        const newMatch = await createMatch(
           session.id,
           nextRound,
           { A: teamA.map(p => p.id), B: teamB.map(p => p.id) },
           nextTeams.map(team => team.map(p => p.id)),
           nextRound
         )
-        addMatch(session.id, newMatch.id)
+        await addMatch(session.id, newMatch.id)
         navigate(`/session/${code}/match/${newMatch.id}`)
         return
       }
@@ -160,8 +168,8 @@ export default function Checkin() {
       }
 
       const { updateTeams } = useMatchStore.getState()
-      updateTeams(activeMatch.id, { A: newTeamA, B: newTeamB })
-      updateNextTeams(activeMatch.id, newNextTeams)
+      await updateTeams(activeMatch.id, { A: newTeamA, B: newTeamB })
+      await updateNextTeams(activeMatch.id, newNextTeams)
 
       navigate(`/session/${code}/match/${activeMatch.id}`)
       return
@@ -172,23 +180,20 @@ export default function Checkin() {
       session.config.teamSize
     )
 
-    // Verificar se há partidas anteriores na sessão (pode ser após cancelamento)
-    // Se sim, definir roundsOutResetAt para zerar a contagem de rounds de fora
-    const allSessionMatches = getMatchesBySession(session.id)
+    const allSessionMatches = useMatchStore.getState().getMatchesBySession(session.id)
     const hasPreviousMatches = allSessionMatches.length > 0
     const nextRound = hasPreviousMatches
       ? Math.max(...allSessionMatches.map(m => m.round)) + 1
       : 1
 
-    const match = createMatch(
+    const match = await createMatch(
       session.id,
       nextRound,
       { A: teamA.map(p => p.id), B: teamB.map(p => p.id) },
       nextTeams.map(team => team.map(p => p.id)),
-      // Se há histórico anterior, zera a contagem de fora a partir deste round
       hasPreviousMatches ? nextRound : undefined
     )
-    addMatch(session.id, match.id)
+    await addMatch(session.id, match.id)
 
     navigate(`/session/${code}/match/${match.id}`)
   }
@@ -361,6 +366,7 @@ export default function Checkin() {
             checked={checkedIn.has(player.id)}
             onToggle={() => toggleCheckin(player.id)}
             onDelete={handleDeletePlayer}
+            onEdit={(p) => setEditingPlayer(p)}
           />
         ))}
 
@@ -375,6 +381,16 @@ export default function Checkin() {
         <AddPlayerModal
           onConfirm={handleAddNewPlayer}
           onCancel={() => setShowAddModal(false)}
+          existingNames={sessionPlayers.map(p => p.name)}
+        />
+      )}
+
+      {editingPlayer && (
+        <EditPlayerModal
+          player={editingPlayer}
+          existingNames={sessionPlayers.filter(p => p.id !== editingPlayer.id).map(p => p.name)}
+          onConfirm={handleEditPlayer}
+          onCancel={() => setEditingPlayer(null)}
         />
       )}
     </div>

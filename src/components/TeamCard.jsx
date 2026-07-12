@@ -1,7 +1,4 @@
-import { teamAverage } from '../logic/balancing'
-
 export default function TeamCard({ label, color, players }) {
-  const avg = teamAverage(players)
   const colors = {
     sage: { border: 'border-sage', label: 'text-sage-dark', dot: '🟢' },
     sky:  { border: 'border-sky',  label: 'text-sky-700',   dot: '🔵' },
@@ -14,7 +11,6 @@ export default function TeamCard({ label, color, players }) {
         <span className={`text-xs font-medium ${c.label}`}>
           {c.dot} {label}
         </span>
-        <span className="text-xs text-stone-400">Média: {avg}</span>
       </div>
       <div className="space-y-1.5">
         {players.map(p => (
@@ -24,7 +20,6 @@ export default function TeamCard({ label, color, players }) {
               {p.name[0]}
             </div>
             <span className="text-sm text-stone-700 dark:text-stone-200 flex-1 truncate">{p.name}</span>
-            <span className="text-xs text-stone-400">{p.rating}</span>
           </div>
         ))}
       </div>

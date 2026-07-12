@@ -1,11 +1,7 @@
 import { useState } from 'react'
-import { teamAverage } from '../../logic/balancing'
 
 export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm, onCancel }) {
   const [selected, setSelected] = useState(null)
-
-  const avgA = teamAverage(teamAPlayers)
-  const avgB = teamAverage(teamBPlayers)
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
@@ -15,7 +11,7 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
           Quem venceu?
         </h2>
         <p className="text-xs text-stone-400 text-center mb-5">
-          Selecione o time vencedor para atualizar os ratings
+          Selecione o time vencedor
         </p>
 
         <div className="grid grid-cols-2 gap-3 mb-5">
@@ -39,7 +35,6 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
                 </span>
               )}
             </div>
-            <div className="text-xs text-stone-500 mb-2">Média: {avgA}</div>
             <div className="space-y-1">
               {teamAPlayers.map(p => (
                 <div key={p.id} className="text-xs text-stone-600 dark:text-stone-300 truncate">
@@ -69,7 +64,6 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
                 </span>
               )}
             </div>
-            <div className="text-xs text-stone-500 mb-2">Média: {avgB}</div>
             <div className="space-y-1">
               {teamBPlayers.map(p => (
                 <div key={p.id} className="text-xs text-stone-600 dark:text-stone-300 truncate">
@@ -79,13 +73,6 @@ export default function FinishMatchModal({ teamAPlayers, teamBPlayers, onConfirm
             </div>
           </button>
         </div>
-
-        {selected && (
-          <div className="bg-stone-50 dark:bg-stone-700 rounded-xl p-3 mb-4
-                          text-xs text-stone-500 dark:text-stone-400 text-center">
-            Vencedores ganham ~+2 pts · Perdedores perdem ~−1 pt
-          </div>
-        )}
 
         <div className="flex gap-3">
           <button

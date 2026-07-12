@@ -42,11 +42,11 @@ export default function Home() {
     setError('Sessão não encontrada. Verifique o código ou o link compartilhado.')
   }
 
-  function handleImport(data) {
+  async function handleImport(data) {
     const parsed = importSession(data)
     if (parsed?.session) {
-      importToStore(parsed.session)
-      if (parsed.players) importPlayers(parsed.players)
+      await importToStore(parsed.session)
+      if (parsed.players) await importPlayers(parsed.players)
       navigate(`/session/${parsed.session.code}/checkin`)
     } else {
       setError('Falha ao restaurar sessão. Link inválido.')

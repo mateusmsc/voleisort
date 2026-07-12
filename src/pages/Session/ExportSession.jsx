@@ -8,7 +8,9 @@ import { exportSession } from '../../utils/session-code'
 export default function ExportSession() {
   const { code } = useParams()
   const navigate = useNavigate()
-  const session = useSessionStore(s => s.getSessionByCode(code))
+  const session = useSessionStore(s =>
+    Object.values(s.sessions).find(sess => sess.code === code) ?? null
+  )
   const { getAllPlayers } = usePlayerStore()
   const getMatchesBySession = useMatchStore(s => s.getMatchesBySession)
 
@@ -91,17 +93,17 @@ export default function ExportSession() {
       </div>
 
       <h2 className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-3">
-        Ranking da sessão
+        Jogadores da sessão
       </h2>
       <div className="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100 mb-6">
         {[...sessionPlayers]
-          .sort((a, b) => b.rating - a.rating)
+          .sort((a, b) => a.name.localeCompare(b.name))
           .slice(0, 5)
           .map((p, i) => (
             <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="text-xs text-stone-400 w-4">{i + 1}</span>
               <span className="text-sm text-stone-700 flex-1">{p.name}</span>
-              <span className="text-xs font-medium text-sage-dark">{p.rating} pts</span>
+              <span className="text-xs text-stone-400">{p.stats.wins}V / {p.stats.losses}D</span>
             </div>
           ))}
         {sessionPlayers.length === 0 && (
@@ -128,7 +130,7 @@ export default function ExportSession() {
       </div>
 
       <p className="text-xs text-stone-400 text-center mt-4">
-        Quem tiver o link pode retomar a sessão com todos os ratings preservados.
+        Quem tiver o link pode retomar a sessão com todos os dados preservados.
       </p>
     </div>
   )

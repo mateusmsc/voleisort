@@ -1,32 +1,40 @@
-export function formTeams(players, teamSize = 6) {
-  const sorted = [...players].sort((a, b) => b.rating - a.rating)
+import { HIGH_LEVEL_THRESHOLD } from '../utils/levels.js'
 
-  const teamA = []
-  const teamB = []
-  const playing = sorted.slice(0, teamSize * 2)
-  const waiting = sorted.slice(teamSize * 2)
-
-  playing.forEach((player, i) => {
-    const group = Math.floor(i / 2)
-    const isEvenGroup = group % 2 === 0
-    const isFirstInPair = i % 2 === 0
-
-    if (isEvenGroup) {
-      isFirstInPair ? teamA.push(player) : teamB.push(player)
-    } else {
-      isFirstInPair ? teamB.push(player) : teamA.push(player)
-    }
-  })
-
-  return { teamA, teamB, waiting }
+function isHigh(player, threshold) {
+  return (player.level ?? 0) >= threshold
 }
 
-export function teamAverage(players) {
-  if (players.length === 0) return 0
-  return Math.round(players.reduce((sum, p) => sum + p.rating, 0) / players.length)
+// Verifica se trocar a[i] com b[j] concentraria jogadores de alto nível
+// num único time (2+ num time, 0 no outro).
+function swapViolatesSpread(a, b, i, j, threshold) {
+  const aIsHigh = isHigh(a[i], threshold)
+  const bIsHigh = isHigh(b[j], threshold)
+
+  // Se nenhum dos dois é de alto nível, a troca nunca viola
+  if (!aIsHigh && !bIsHigh) return false
+
+  // Se ambos são de alto nível, trocar um pelo outro não muda os totais
+  if (aIsHigh && bIsHigh) return false
+
+  // Um é alto, o outro não: a troca desloca um alto de um time para o outro
+  const highA = a.filter(p => isHigh(p, threshold)).length
+  const highB = b.filter(p => isHigh(p, threshold)).length
+
+  let newHighA, newHighB
+  if (aIsHigh) {
+    // a[i] (alto) vai para B; b[j] (não-alto) vai para A
+    newHighA = highA - 1
+    newHighB = highB + 1
+  } else {
+    // b[j] (alto) vai para A; a[i] (não-alto) vai para B
+    newHighA = highA + 1
+    newHighB = highB - 1
+  }
+
+  return (newHighA >= 2 && newHighB === 0) || (newHighB >= 2 && newHighA === 0)
 }
 
-export function shuffleTeams(teamA, teamB, swaps = 3) {
+export function shuffleTeams(teamA, teamB, swaps = 3, threshold = HIGH_LEVEL_THRESHOLD) {
   let a = [...teamA]
   let b = [...teamB]
 
@@ -34,10 +42,9 @@ export function shuffleTeams(teamA, teamB, swaps = 3) {
   for (let i = 0; i < a.length; i++) {
     for (let j = 0; j < b.length; j++) {
       if (a[i].id === b[j].id) continue
-      pairs.push({ i, j, ratingDiff: Math.abs(a[i].rating - b[j].rating) })
+      pairs.push({ i, j })
     }
   }
-  pairs.sort((x, y) => x.ratingDiff - y.ratingDiff)
 
   const poolSize = Math.min(pairs.length, swaps * 4)
   const pool = pairs.slice(0, poolSize)
@@ -54,6 +61,9 @@ export function shuffleTeams(teamA, teamB, swaps = 3) {
   for (const { i, j } of pool) {
     if (done >= swaps) break
     if (usedA.has(i) || usedB.has(j)) continue
+
+    // Pula pares que concentrariam alto nível num único time
+    if (swapViolatesSpread(a, b, i, j, threshold)) continue
 
     const tmp = a[i]
     a = a.map((p, idx) => idx === i ? b[j] : p)

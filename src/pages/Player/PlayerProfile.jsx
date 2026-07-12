@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { useMatchStore } from '../../store/useMatchStore'
@@ -6,11 +5,9 @@ import { useMatchStore } from '../../store/useMatchStore'
 export default function PlayerProfile() {
   const { playerId } = useParams()
   const navigate = useNavigate()
-  const { getPlayer, updatePlayer } = usePlayerStore()
+  const { getPlayer } = usePlayerStore()
 
   const player = getPlayer(playerId)
-  const [editingRating, setEditingRating] = useState(false)
-  const [ratingInput, setRatingInput] = useState(player?.rating ?? 50)
 
   if (!player) {
     return (
@@ -43,12 +40,6 @@ export default function PlayerProfile() {
     .sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt))
     .slice(0, 10)
 
-  function handleSaveRating() {
-    const val = Math.max(0, Math.min(100, parseInt(ratingInput) || 0))
-    updatePlayer(playerId, { rating: val })
-    setEditingRating(false)
-  }
-
   return (
     <div className="min-h-screen flex flex-col">
 
@@ -74,47 +65,6 @@ export default function PlayerProfile() {
             month: 'long', year: 'numeric'
           })}
         </p>
-
-        <div className="bg-white rounded-xl px-3 py-2 flex items-center gap-3">
-          <span className="text-xs text-stone-400 flex-shrink-0">Rating</span>
-          <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-sage-dark rounded-full transition-all"
-              style={{ width: `${player.rating}%` }}
-            />
-          </div>
-          {editingRating ? (
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                value={ratingInput}
-                onChange={e => setRatingInput(e.target.value)}
-                min={0} max={100}
-                className="w-14 text-center text-sm border border-sage rounded-lg
-                           py-0.5 focus:outline-none"
-              />
-              <button
-                onClick={handleSaveRating}
-                className="text-xs text-sage-dark font-medium"
-              >
-                ✓
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => { setRatingInput(player.rating); setEditingRating(true) }}
-              className="text-sm font-medium text-sage-dark min-w-[32px]"
-            >
-              {player.rating}
-            </button>
-          )}
-        </div>
-
-        {editingRating && (
-          <p className="text-xs text-stone-400 mt-1.5">
-            Toque no número para editar o rating manualmente (0–100)
-          </p>
-        )}
       </div>
 
       <div className="grid grid-cols-3 gap-2 px-4 py-4">
@@ -172,11 +122,6 @@ export default function PlayerProfile() {
                   </span>
                   <span className="text-xs text-stone-400 flex-1">
                     Partida {m.round}
-                  </span>
-                  <span className={`text-xs font-medium ${
-                    won ? 'text-sage-dark' : 'text-red-400'
-                  }`}>
-                    {won ? '+2 pts' : '−1 pt'}
                   </span>
                 </div>
               )

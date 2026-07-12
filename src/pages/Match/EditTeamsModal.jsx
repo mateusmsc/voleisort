@@ -49,7 +49,6 @@ export default function EditTeamsModal({ title, slots, initialGroups, extraPool,
         }`}
       >
         <span className="text-sm text-stone-700 dark:text-stone-300 flex-1 truncate">{p.name}</span>
-        <span className="text-xs text-stone-400">{p.rating}</span>
         {isMoving && <span className="text-xs text-amber-500 dark:text-amber-400 font-medium">mover →</span>}
       </button>
     )

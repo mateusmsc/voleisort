@@ -9,9 +9,9 @@ export default function SessionSetup() {
   const [name, setName] = useState('')
   const [teamSize, setTeamSize] = useState(6)
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!name.trim()) return
-    const session = createSession(name.trim(), { teamSize })
+    const session = await createSession(name.trim(), { teamSize })
     navigate(`/session/${session.code}/checkin`)
   }
 

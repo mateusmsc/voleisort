@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayerStore } from '../store/usePlayerStore'
 
-export default function PlayerRow({ player, checked, onToggle, onDelete }) {
+export default function PlayerRow({ player, checked, onToggle, onDelete, onEdit }) {
   const navigate = useNavigate()
   const [showMenu, setShowMenu] = useState(false)
   const { removePlayer } = usePlayerStore()
@@ -56,17 +56,6 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
 
         <div
           onClick={onToggle}
-          className={`text-xs font-medium px-2 py-1 rounded-md border ${
-            player.rating >= 70
-              ? 'bg-sage-light border-sage text-sage-dark dark:bg-sage-dark/20 dark:border-sage-dark/40 dark:text-sage'
-              : 'bg-sand-light border-sand text-stone-500 dark:bg-stone-700/50 dark:border-stone-600/50 dark:text-stone-400'
-          }`}
-        >
-          {player.rating}
-        </div>
-
-        <div
-          onClick={onToggle}
           className={`w-5 h-5 rounded-full border flex items-center justify-center
                        flex-shrink-0 ${
             checked
@@ -91,6 +80,17 @@ export default function PlayerRow({ player, checked, onToggle, onDelete }) {
           >
             👤 Ver perfil
           </button>
+          {onEdit && (
+            <button
+              onClick={() => { onEdit(player); setShowMenu(false) }}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-sm
+                         text-stone-700 dark:text-stone-200
+                         hover:bg-stone-50 dark:hover:bg-stone-700/60 text-left
+                         border-t border-stone-100 dark:border-stone-700"
+            >
+              ✏️ Editar jogador
+            </button>
+          )}
           <button
             onClick={handleDelete}
             className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-500

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyCheckinWithActiveMatch } from './checkin-logic.js'
+import { applyCheckinWithActiveMatch } from '../../src/logic/checkin-logic.js'
 
 describe('[INTEGRACAO] fluxo exato do Checkin.jsx com dados do store', () => {
   function makeStoreGetPlayer(playerMap) {

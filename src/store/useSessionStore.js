@@ -18,6 +18,7 @@ export const useSessionStore = create((set, get) => ({
       checkedInIds: [],
       matchIds: [],
       status: 'active',
+      panelHash: generateCode(),
     }
     set(state => ({
       sessions: { ...state.sessions, [session.id]: session },
@@ -103,6 +104,8 @@ export const useSessionStore = create((set, get) => ({
     set(state => {
       const s = state.sessions[sessionId]
       if (!s) return state
+      // statsResetAt NÃO muda aqui: ele marca o início do dia (gravado ao
+      // retomar), para o painel finished exibir as partidas desse dia.
       return {
         sessions: {
           ...state.sessions,
@@ -111,6 +114,38 @@ export const useSessionStore = create((set, get) => ({
       }
     })
     await sessionService.finishSession(sessionId)
+  },
+
+  async resumeSession(sessionId) {
+    const s = get().sessions[sessionId]
+    if (!s || s.status === 'active') return
+
+    // Novo dia: rotaciona o painel e marca o início da janela de estatísticas
+    const panelHash = generateCode()
+    const statsResetAt = new Date().toISOString()
+    set(state => ({
+      sessions: {
+        ...state.sessions,
+        [sessionId]: { ...state.sessions[sessionId], status: 'active', panelHash, statsResetAt },
+      },
+    }))
+    await sessionService.update(sessionId, { status: 'active', panelHash, statsResetAt })
+  },
+
+  async ensurePanelHash(sessionId) {
+    const s = get().sessions[sessionId]
+    if (!s) return null
+    if (s.panelHash) return s.panelHash
+
+    const panelHash = generateCode()
+    set(state => ({
+      sessions: {
+        ...state.sessions,
+        [sessionId]: { ...state.sessions[sessionId], panelHash },
+      },
+    }))
+    await sessionService.update(sessionId, { panelHash })
+    return panelHash
   },
 
   // Chamado pelo boot para hidratar com dados do Supabase

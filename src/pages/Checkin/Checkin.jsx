@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
@@ -9,6 +9,7 @@ import { applyCheckinWithActiveMatch, insertPlayerIntoQueue } from '../../logic/
 import PlayerRow from '../../components/PlayerRow'
 import AddPlayerModal from './AddPlayerModal'
 import EditPlayerModal from './EditPlayerModal'
+import PanelShareButton from '../../components/PanelShareButton'
 
 export default function Checkin() {
   const { code } = useParams()
@@ -36,7 +37,7 @@ export default function Checkin() {
   })
 
   const { getPlayer, addPlayer, updatePlayer } = usePlayerStore()
-  const { setCheckedIn, addPlayerToSession, addMatch, updateSessionConfig } = useSessionStore()
+  const { setCheckedIn, addPlayerToSession, addMatch, updateSessionConfig, resumeSession } = useSessionStore()
   const { createMatch, updateNextTeams } = useMatchStore()
 
   const [search, setSearch] = useState('')
@@ -46,6 +47,12 @@ export default function Checkin() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [editingPlayer, setEditingPlayer] = useState(null)
+
+  // Sessões legadas podem não ter panelHash — gera na primeira visita
+  const ensurePanelHash = useSessionStore(s => s.ensurePanelHash)
+  useEffect(() => {
+    if (sessionId) ensurePanelHash(sessionId)
+  }, [sessionId, ensurePanelHash])
 
   const sorted = useMemo(() => {
     return [...sessionPlayers].sort((a, b) => a.name.localeCompare(b.name))
@@ -120,6 +127,11 @@ export default function Checkin() {
     if (!session) return
     const presentPlayers = sessionPlayers.filter(p => checkedIn.has(p.id))
 
+    // Sessão de semana anterior finalizada? Retoma para a nova rodada do dia.
+    if (session.status !== 'active') {
+      await resumeSession(session.id)
+    }
+
     setCheckedIn(session.id, [...checkedIn])
 
     if (activeMatch) {
@@ -182,6 +194,8 @@ export default function Checkin() {
 
     const allSessionMatches = useMatchStore.getState().getMatchesBySession(session.id)
     const hasPreviousMatches = allSessionMatches.length > 0
+    // Round interno permanece GLOBAL (janelas de roundsOut dependem disso);
+    // o número EXIBIDO na tela é diário (dayMatchNumber no Match).
     const nextRound = hasPreviousMatches
       ? Math.max(...allSessionMatches.map(m => m.round)) + 1
       : 1
@@ -237,9 +251,12 @@ export default function Checkin() {
             <h1 className="text-base font-medium text-stone-800 dark:text-stone-100">Check-in</h1>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 bg-sage-light border border-sage
-                        rounded-lg px-2.5 py-1 text-xs text-sage-dark font-medium">
-          🔑 {session.code}
+        <div className="flex items-center gap-3">
+          <PanelShareButton panelHash={session?.panelHash} />
+          <div className="flex items-center gap-1.5 bg-sage-light border border-sage
+                          rounded-lg px-2.5 py-1 text-xs text-sage-dark font-medium">
+            🔑 {session.code}
+          </div>
         </div>
       </div>
 

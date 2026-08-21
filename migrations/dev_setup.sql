@@ -124,6 +124,39 @@ ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS status text DEFAULT 'active
 
 
 -- ---------------------------------------------------------------------------
+-- 006 — Painel público: coluna panel_hash nas sessões
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS panel_hash text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_panel_hash_unique ON public.sessions (panel_hash);
+
+
+-- ---------------------------------------------------------------------------
+-- 007 — Grants para PostgREST (necessário no Supabase CLI local; na nuvem é
+--       automático via default privileges)
+-- ---------------------------------------------------------------------------
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
+
+-- ---------------------------------------------------------------------------
+-- 008 — Painel: janela de estatísticas do dia (stats_reset_at)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.sessions ADD COLUMN IF NOT EXISTS stats_reset_at timestamptz;
+
+
+-- ---------------------------------------------------------------------------
+-- 009 — RoundsOut: participantes originais da partida
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS original_participant_ids uuid[];
+
+
+-- ---------------------------------------------------------------------------
 -- Verificação final
 -- ---------------------------------------------------------------------------
 

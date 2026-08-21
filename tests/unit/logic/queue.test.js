@@ -7,6 +7,7 @@ import {
   updateRoundsOut,
   levelSpreadDraft,
   rebalanceHighLevelPlayers,
+  promoteNextTeam,
 } from '../../../src/logic/queue.js'
 
 function makePlayers(count, startId = 1) {
@@ -561,5 +562,134 @@ describe('rebalanceHighLevelPlayers â€” remanejamento pÃ³s-draft', () => {
 
     expect(all.sort()).toEqual(original.sort())
     expect(new Set(all).size).toBe(all.length)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// promoteNextTeam [RED 2026-08-21] ï¿½ feature "Subir a prï¿½xima"
+//
+// Troca o time escolhido (side) pela 1ï¿½ prï¿½xima, SEM registrar derrota.
+// O time que sai tem seus jogadores redistribuï¿½dos INDIVIDUALMENTE para o
+// final da fila; a fila ï¿½ remontada em chunks de teamSize.
+// ---------------------------------------------------------------------------
+
+describe('promoteNextTeam', () => {
+  const teamA = ['a1', 'a2']
+  const teamB = ['b1', 'b2', 'b3']
+  const nextTeams = [
+    ['n1', 'n2'],   // 1ï¿½ prï¿½xima ï¿½ sobe
+    ['n3', 'n4'],
+    ['n5'],
+  ]
+
+  it('sobe a 1ï¿½ prï¿½xima no lugar do Time B, mantendo Time A', () => {
+    const r = promoteNextTeam({ teamA, teamB, nextTeams, side: 'B', teamSize: 3 })
+    expect(r.teamA).toEqual(['a1', 'a2'])
+    expect(r.teamB).toEqual(['n1', 'n2'])
+  })
+
+  it('sobe a 1ï¿½ prï¿½xima no lugar do Time A, mantendo Time B', () => {
+    const r = promoteNextTeam({ teamA, teamB, nextTeams, side: 'A', teamSize: 3 })
+    expect(r.teamA).toEqual(['n1', 'n2'])
+    expect(r.teamB).toEqual(['b1', 'b2', 'b3'])
+  })
+
+  it('time que sai vai individualmente para o FIM da fila (apï¿½s as demais prï¿½ximas)', () => {
+    const r = promoteNextTeam({ teamA, teamB, nextTeams, side: 'B', teamSize: 3 })
+    // fila restante: n3,n4,n5 + b1,b2,b3 no fim ? chunks de 3
+    expect(r.nextTeams).toEqual([
+      ['n3', 'n4', 'n5'],
+      ['b1', 'b2', 'b3'],
+    ])
+  })
+
+  it('fila fica vazia quando sï¿½ existe a 1ï¿½ prï¿½xima e ela sobe', () => {
+    const r = promoteNextTeam({
+      teamA: ['a1'], teamB: ['b1'], nextTeams: [['n1']], side: 'A', teamSize: 2,
+    })
+    expect(r.teamA).toEqual(['n1'])
+    expect(r.teamB).toEqual(['b1'])
+    // quem sai Ã© o Time A (side escolhido)
+    expect(r.nextTeams).toEqual([['a1']])
+  })
+
+  it('sem 1ï¿½ prï¿½xima nï¿½o hï¿½ o que subir ? retorna null', () => {
+    const r = promoteNextTeam({ teamA, teamB, nextTeams: [], side: 'B', teamSize: 3 })
+    expect(r).toBeNull()
+  })
+
+  it('side invï¿½lido retorna null', () => {
+    const r = promoteNextTeam({ teamA, teamB, nextTeams, side: 'C', teamSize: 3 })
+    expect(r).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// levelSpreadDraft — aleatoriedade controlada [RED 2026-08-21]
+//
+// O draft era determinístico: mesma entrada ? mesmos times sempre.
+// Agora aceita rng injetável e embaralha a ordem dos jogadores DENTRO de
+// cada balde de nível antes do round-robin. Contagens por nível por grupo
+// permanecem idênticas (equilíbrio preservado); só a composição varia.
+// ---------------------------------------------------------------------------
+
+function seededRandom(seed) {
+  let s = seed % 2147483647
+  if (s <= 0) s += 2147483646
+  return () => {
+    s = (s * 16807) % 2147483647
+    return (s - 1) / 2147483646
+  }
+}
+
+function compositionSignature(result) {
+  const groups = [result.teamA, result.teamB, ...result.nextTeams]
+  return groups.map(g => g.map(p => p.id).sort().join(',')).join('|')
+}
+
+describe('levelSpreadDraft — aleatoriedade entre sessões', () => {
+  const buildPlayers = () =>
+    Array.from({ length: 24 }, (_, i) =>
+      makeLevel(`p${i}`, [5, 4.5, 4, 3.5][i % 4])
+    )
+
+  function levelMatrix(result) {
+    const groups = [result.teamA, result.teamB, ...result.nextTeams]
+    return groups.map(g => {
+      const m = {}
+      for (const p of g) m[p.level] = (m[p.level] ?? 0) + 1
+      return JSON.stringify(m)
+    }).join('|')
+  }
+
+  it('[RED] sementes diferentes produzem composições diferentes', () => {
+    const c1 = compositionSignature(levelSpreadDraft(buildPlayers(), 6, seededRandom(1)))
+    const c7 = compositionSignature(levelSpreadDraft(buildPlayers(), 6, seededRandom(7)))
+    expect(c1).not.toBe(c7)
+  })
+
+  it('sem rng explícito, duas chamadas seguidas podem divergir (default Math.random)', () => {
+    const players = buildPlayers()
+    const assinaturas = new Set()
+    for (let i = 0; i < 10; i++) {
+      assinaturas.add(compositionSignature(levelSpreadDraft(players, 6)))
+    }
+    expect(assinaturas.size).toBeGreaterThan(1)
+  })
+
+  it('aleatoriedade preserva matriz de níveis, tamanhos e ausência de duplicatas', () => {
+    const base = levelSpreadDraft(buildPlayers(), 6)
+
+    for (const seed of [1, 7, 42, 999]) {
+      const r = levelSpreadDraft(buildPlayers(), 6, seededRandom(seed))
+      const groups = [r.teamA, r.teamB, ...r.nextTeams]
+
+      expect(levelMatrix(r)).toBe(levelMatrix(base))
+
+      const allOut = groups.flat().map(p => p.id)
+      expect(new Set(allOut).size).toBe(allOut.length)
+      expect(allOut.length).toBe(24)
+      for (const g of groups) expect(g.length).toBeLessThanOrEqual(6)
+    }
   })
 })

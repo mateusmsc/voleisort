@@ -1,6 +1,6 @@
 const ORDINALS = ['1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª', '8ª']
 
-export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, showLevels, onEdit }) {
+export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, showLevels, onEdit, onPromote }) {
   const isIncomplete = players.length < teamSize
   const label = `${ORDINALS[index] ?? `${index + 1}ª`} próxima`
 
@@ -20,12 +20,24 @@ export default function NextTeamCard({ index, players, teamSize, roundsOut = {},
             </span>
           )}
         </div>
-        <button
-          onClick={onEdit}
-          className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
-        >
-          ✏️
-        </button>
+        {onPromote && (
+          <button
+            onClick={onPromote}
+            className="text-xs text-sage-dark dark:text-sage hover:text-stone-600 dark:hover:text-stone-300
+                       border border-sage rounded-md px-1.5 py-0.5"
+            title="Subir esta próxima agora"
+          >
+            ⬆️ subir
+          </button>
+        )}
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+          >
+            ✏️
+          </button>
+        )}
       </div>
 
       <div className="space-y-1.5">

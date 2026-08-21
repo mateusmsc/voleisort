@@ -1,15 +1,18 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
-import { advanceQueue } from '../../logic/queue'
+import { advanceQueue, promoteNextTeam } from '../../logic/queue'
 import { shuffleTeams } from '../../logic/balancing'
-import { computeRoundsOut } from '../../logic/rounds-out'
+import { computeCurrentMatchRoundsOut, finishedDayMatches, dayMatchNumber } from '../../logic/rounds-out'
+import { computeWinStreak } from '../../logic/session-stats'
 import FieldTeams from './FieldTeams'
 import NextTeamCard from './NextTeamCard'
 import FinishMatchModal from './FinishMatchModal'
+import PromoteNextModal from './PromoteNextModal'
 import EditTeamsModal from './EditTeamsModal'
+import PanelShareButton from '../../components/PanelShareButton'
 
 export default function Match() {
   const { code, matchId } = useParams()
@@ -27,6 +30,12 @@ export default function Match() {
   const [editingNextIdx, setEditingNextIdx] = useState(null)
   const [showLevels, setShowLevels] = useState(false)
 
+  // Sessões legadas podem não ter panelHash — gera na primeira visita
+  const ensurePanelHash = useSessionStore(s => s.ensurePanelHash)
+  useEffect(() => {
+    if (session?.id) ensurePanelHash(session.id)
+  }, [session?.id, ensurePanelHash])
+
   const teamA = useMemo(
     () => (match?.teams.A ?? []).map(id => getPlayer(id)).filter(Boolean),
     [match, getPlayer]
@@ -42,33 +51,29 @@ export default function Match() {
 
   const roundsOut = useMemo(() => {
     if (!match || !session) return {}
-    const resetFromRound = match.roundsOutResetAt ?? 0
-    const finishedMatches = useMatchStore.getState()
-      .getMatchesBySession(session.id)
-      .filter(m =>
-        m.id !== matchId &&
-        m.status === 'finished' &&
-        m.round >= resetFromRound
-      )
-
-    const allIds = [
-      ...(match.teams.A ?? []),
-      ...(match.teams.B ?? []),
-      ...(match.nextTeams ?? []).flat()
-    ]
-
-    // Participantes originais da partida atual: jogadores que estavam presentes
-    // quando a partida foi criada. São todos que já apareceram em pelo menos uma
-    // partida do histórico desta sessão OU estão nos times/fila da partida atual.
-    // Jogadores que chegaram via check-in tardio não estarão em nenhuma partida
-    // histórica, por isso computeRoundsOut os trata como roundsOut=0.
-    const allHistoricalIds = new Set(
-      finishedMatches.flatMap(m => [...m.teams.A, ...m.teams.B])
+    return computeCurrentMatchRoundsOut(
+      match,
+      useMatchStore.getState().getMatchesBySession(session.id)
     )
-    const originalParticipantIds = allIds.filter(id => allHistoricalIds.has(id))
-
-    return computeRoundsOut(allIds, finishedMatches, originalParticipantIds)
   }, [match, session, matchId])
+
+  const winStreak = useMemo(() => {
+    if (!match || !session) return 0
+    const dayFinished = finishedDayMatches(
+      match,
+      useMatchStore.getState().getMatchesBySession(session.id)
+    )
+    return computeWinStreak(match.teams.A ?? [], dayFinished)
+  }, [match, session, matchId])
+
+  const dayNumber = useMemo(() => {
+    if (!match || !session) return ''
+    return dayMatchNumber(
+      match,
+      useMatchStore.getState().getMatchesBySession(session.id),
+      session.statsResetAt
+    )
+  }, [match, session])
 
   async function handleFinish(winner) {
     const winners = winner === 'A' ? teamA : teamB
@@ -97,6 +102,31 @@ export default function Match() {
   async function handleShuffle() {
     const { teamA: newA, teamB: newB } = shuffleTeams(teamA, teamB, 3)
     await updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
+  }
+
+  async function handlePromoteNext(side) {
+    const result = promoteNextTeam({
+      teamA: match.teams.A ?? [],
+      teamB: match.teams.B ?? [],
+      nextTeams: match.nextTeams ?? [],
+      side,
+      teamSize: session.config.teamSize,
+    })
+    if (!result) return
+
+    // Encerra a partida atual SEM vencedor (sem derrota para ninguém)
+    await finishMatch(matchId, null)
+
+    const nextRound = (match.round ?? 1) + 1
+    const newMatch = await createMatch(
+      session.id,
+      nextRound,
+      { A: result.teamA, B: result.teamB },
+      result.nextTeams,
+      match.roundsOutResetAt
+    )
+    await addMatch(session.id, newMatch.id)
+    navigate(`/session/${code}/match/${newMatch.id}`)
   }
 
   async function handleSaveCurrentTeams([newA, newB], newPool) {
@@ -215,11 +245,12 @@ export default function Match() {
           <div>
             <p className="text-xs text-stone-400">{session?.name} · {session?.code}</p>
             <h1 className="text-base font-medium text-stone-800 dark:text-stone-100">
-              Partida {match.round}
+              Partida {dayNumber}
             </h1>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <PanelShareButton panelHash={session?.panelHash} />
           <button
             onClick={() => setMode('confirmResetRoundsOut')}
             className="text-xs text-stone-400 dark:text-stone-500 underline mr-1"
@@ -260,6 +291,7 @@ export default function Match() {
           onShuffle={handleShuffle}
           showLevels={showLevels}
           onToggleLevels={() => setShowLevels(s => !s)}
+          winStreak={winStreak}
         />
 
         {nexts.length > 0 && (
@@ -276,6 +308,7 @@ export default function Match() {
                   teamSize={session?.config.teamSize ?? 6}
                   roundsOut={roundsOut}
                   showLevels={showLevels}
+                  onPromote={idx === 0 ? () => setMode('promoting') : undefined}
                   onEdit={() => {
                     setEditingNextIdx(idx)
                     setMode('editingNext')
@@ -309,6 +342,15 @@ export default function Match() {
           teamAPlayers={teamA}
           teamBPlayers={teamB}
           onConfirm={handleFinish}
+          onCancel={() => setMode('playing')}
+        />
+      )}
+
+      {mode === 'promoting' && (
+        <PromoteNextModal
+          teamAPlayers={teamA}
+          teamBPlayers={teamB}
+          onConfirm={handlePromoteNext}
           onCancel={() => setMode('playing')}
         />
       )}

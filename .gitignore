@@ -22,7 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-/planos
 .vercel
 .env*
 !.env.example
+
+# Snapshots locais de dados de produção (dados pessoais — não versionar)
+backups/

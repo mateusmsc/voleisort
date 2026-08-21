@@ -7,7 +7,7 @@ Analise o estado atual do projeto voleisort e atualize os arquivos de documenta�
 ## Passos obrigatórios
 
 1. Leia `premissas.md` e `CONTEXTO.md` para entender o que já está documentado.
-2. Explore o código atual nas pastas `src/logic/`, `src/store/`, `src/services/`, `src/pages/`, `src/components/`, `src/utils/` e `planos/SUMARIO.md`.
+2. Explore o código atual nas pastas `src/logic/`, `src/store/`, `src/services/`, `src/pages/`, `src/components/`, `src/utils/` e `docs/SUMARIO.md`.
 3. Compare o que está documentado com o que o código realmente faz.
 4. Identifique divergências: funcionalidades novas, removidas ou alteradas; regras de negócio que mudaram; novos arquivos, stores, services ou testes.
 5. Atualize `premissas.md` e `CONTEXTO.md` apenas onde houver divergência — não reescreva o que já está correto.

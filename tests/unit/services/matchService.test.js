@@ -133,6 +133,7 @@ describe('matchService — mapeamento fromDb (getBySession)', () => {
         winner:     'A',
         startedAt:  '2024-01-01T10:00:00.000Z',
         finishedAt: '2024-01-01T11:00:00.000Z',
+        originalIds: null,
         // roundsOutResetAt ausente quando null
       },
     ])

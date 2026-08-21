@@ -7,6 +7,7 @@ import Checkin from './pages/Checkin/Checkin'
 import Match from './pages/Match/Match'
 import PlayerProfile from './pages/Player/PlayerProfile'
 import SupabaseCheck from './pages/Dev/SupabaseCheck'
+import Panel from './pages/Panel/Panel'
 
 function MatchWrapper() {
   const { matchId } = useParams()
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="/session/:code/match/:matchId" element={<MatchWrapper />} />
             <Route path="/session/:code/export" element={<ExportSession />} />
             <Route path="/player/:playerId" element={<PlayerProfile />} />
+            <Route path="/panel/:hash" element={<Panel />} />
             <Route path="/dev/supabase" element={<SupabaseCheck />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

@@ -16,6 +16,7 @@ export const useMatchStore = create((set, get) => ({
       winner: null,
       startedAt: new Date().toISOString(),
       finishedAt: null,
+      originalIds: [...teams.A, ...teams.B, ...nextTeams.flat()],
       ...(roundsOutResetAt !== undefined ? { roundsOutResetAt } : {}),
     }
     set(state => ({ matches: { ...state.matches, [match.id]: match } }))

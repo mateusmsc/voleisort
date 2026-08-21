@@ -15,6 +15,9 @@ function toDb(match) {
   if (match.roundsOutResetAt !== undefined) {
     row.rounds_out_reset_at = match.roundsOutResetAt
   }
+  if (match.originalIds !== undefined) {
+    row.original_participant_ids = match.originalIds
+  }
   return row
 }
 
@@ -33,6 +36,7 @@ function fromDb(row) {
   if (row.rounds_out_reset_at !== null && row.rounds_out_reset_at !== undefined) {
     match.roundsOutResetAt = row.rounds_out_reset_at
   }
+  match.originalIds = row.original_participant_ids ?? null
   return match
 }
 

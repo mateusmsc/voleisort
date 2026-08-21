@@ -1,6 +1,6 @@
 import { DEFAULT_LEVEL, HIGH_LEVEL_THRESHOLD } from '../utils/levels.js'
 
-export function levelSpreadDraft(allPlayers, teamSize) {
+export function levelSpreadDraft(allPlayers, teamSize, rng = Math.random) {
   const numGroups = Math.max(2, Math.ceil(allPlayers.length / teamSize))
   const groups    = Array.from({ length: numGroups }, () => [])
 
@@ -15,14 +15,22 @@ export function levelSpreadDraft(allPlayers, teamSize) {
   // Ordena níveis do mais alto para o mais baixo
   const sortedLevels = [...byLevel.keys()].sort((a, b) => b - a)
 
-  // Round-robin por nível: distribui cada nível entre os grupos.
-  // Critério de escolha do grupo destino (em ordem de prioridade):
-  //   1. Menor contagem deste nível no grupo (espalhamento)
-  //   2. Menor índice do grupo (desempate: campo tem prioridade)
-  // Respeitando a capacidade máxima de teamSize por grupo.
   for (const lvl of sortedLevels) {
     const players = byLevel.get(lvl)
 
+    // Fisher-Yates: variar a ordem DENTRO do nível entre sessões.
+    // Jogadores do mesmo nível são intercambiáveis para balanceamento,
+    // então médias e contagens por grupo permanecem idênticas.
+    for (let i = players.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[players[i], players[j]] = [players[j], players[i]]
+    }
+
+    // Round-robin por nível: distribui cada nível entre os grupos.
+    // Critério de escolha do grupo destino (em ordem de prioridade):
+    //   1. Menor contagem deste nível no grupo (espalhamento)
+    //   2. Menor índice do grupo (desempate: campo tem prioridade)
+    // Respeitando a capacidade máxima de teamSize por grupo.
     for (const player of players) {
       let bestGroup    = -1
       let bestLvlCount = Infinity
@@ -140,8 +148,32 @@ export function advanceQueue(winners, losers, currentNext, teamSize, roundsOut, 
   return { newOpponent, newNextTeams }
 }
 
-export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut) {
-  const updated = {}
+/**
+ * promoteNextTeam — feature "Subir a próxima"
+ *
+ * Troca o time do lado `side` ('A'|'B') pela 1ª próxima, SEM registrar
+ * derrota. O time que sai tem seus jogadores redistribuídos individualmente
+ * para o FINAL da fila; a fila é remontada em chunks de teamSize.
+ *
+ * @returns {{ teamA: string[], teamB: string[], nextTeams: string[][] } | null}
+ *          null se não há 1ª próxima ou o lado é inválido.
+ */
+export function promoteNextTeam({ teamA, teamB, nextTeams, side, teamSize }) {
+  if (!nextTeams || nextTeams.length === 0) return null
+  if (side !== 'A' && side !== 'B') return null
+
+  const [incoming = [], ...remainingNext] = nextTeams
+
+  const newTeamA = side === 'A' ? [...incoming] : [...teamA]
+  const newTeamB = side === 'B' ? [...incoming] : [...teamB]
+
+  const outgoing = side === 'A' ? teamA : teamB
+  const queueFlat = [...remainingNext.flat(), ...outgoing]
+
+  return { teamA: newTeamA, teamB: newTeamB, nextTeams: buildNextQueue(queueFlat, teamSize) }
+}
+
+export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut) {  const updated = {}
   for (const id of allCheckedInIds) {
     if (playingNowIds.includes(id)) {
       updated[id] = 0

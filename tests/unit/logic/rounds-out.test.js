@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { computeRoundsOut } from '../../../src/logic/rounds-out.js'
+﻿import { describe, it, expect } from 'vitest'
+import {
+  computeRoundsOut,
+  computeCurrentMatchRoundsOut,
+  dayMatchNumber,
+} from '../../../src/logic/rounds-out.js'
 
 // ---------------------------------------------------------------------------
 // computeRoundsOut(allIds, finishedMatches) → { [id]: number }
@@ -101,3 +105,138 @@ describe('[RED] computeRoundsOut — jogador recém-chegado deve ter roundsOut=0
     expect(result['novo']).toBe(0) // recém-chegado
   })
 })
+
+// ---------------------------------------------------------------------------
+// computeCurrentMatchRoundsOut(match, sessionMatches) → { [id]: number }
+//
+// Cenário real (RED 2026-08-21): veterano que jogou em semanas anteriores
+// (round < roundsOutResetAt) mas ficou de fora na 1ª partida do dia deve
+// aparecer com 1 fora. A identificação de "participante original" considera
+// o histórico COMPLETO da sessão; a contagem consecutiva, apenas a janela
+// do dia (round >= roundsOutResetAt).
+// ---------------------------------------------------------------------------
+
+describe('computeCurrentMatchRoundsOut', () => {
+  // Semana anterior (fora da janela do dia)
+  const week1 = [
+    { id: 'w1m1', round: 1, status: 'finished', teams: { A: ['vet1', 'vet2'], B: ['vet3', 'fila'] } },
+    { id: 'w1m2', round: 2, status: 'finished', teams: { A: ['vet1', 'vet2'], B: ['vet3', 'fila'] } },
+  ]
+  // Hoje: T1 finalizada (fila ficou fora), T2 em andamento (fila segue na fila)
+  const todayT1 = {
+    id: 't1', round: 3, status: 'finished', roundsOutResetAt: 3,
+    teams: { A: ['vet1', 'vet2'], B: ['vet3', 'novo'] }, nextTeams: [['fila']],
+  }
+  const todayT2 = {
+    id: 't2', round: 4, status: 'ongoing', roundsOutResetAt: 3,
+    teams: { A: ['vet1', 'vet2'], B: ['vet3', 'novo'] }, nextTeams: [['fila']],
+  }
+  const sessionMatches = [...week1, todayT1, todayT2]
+
+  it('veterano de semanas anteriores fora na 1ª partida do dia tem 1 fora [RED]', () => {
+    const result = computeCurrentMatchRoundsOut(todayT2, sessionMatches)
+    expect(result['fila']).toBe(1)
+  })
+
+  it('quem jogou a última partida tem 0 fora', () => {
+    const result = computeCurrentMatchRoundsOut(todayT2, sessionMatches)
+    expect(result['vet1']).toBe(0)
+    expect(result['vet3']).toBe(0)
+  })
+
+  it('recém-chegado que nunca jogou em nenhuma semana tem 0 fora', () => {
+    const tardioT2 = { ...todayT2, nextTeams: [['fila', 'tardio']] }
+    const result = computeCurrentMatchRoundsOut(tardioT2, sessionMatches)
+    expect(result['tardio']).toBe(0)
+  })
+
+  it('exclui a própria partida da contagem e respeita janela do dia', () => {
+    // fila só jogou nas semanas anteriores (fora da janela); conta apenas T1
+    const result = computeCurrentMatchRoundsOut(todayT2, sessionMatches)
+    expect(result['fila']).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Sessão nova, primeiro dia [RED 2026-08-21]: quem ficou de fora na partida 1
+// nunca jogou nada, mas ERA participante original (saiu do draft inicial).
+// Com match.original_ids persistido na criação, deve contar 1 fora —
+// mesmo sem nunca ter aparecido em nenhuma partida finalizada.
+// ---------------------------------------------------------------------------
+
+describe('computeCurrentMatchRoundsOut — sessão nova com original_ids', () => {
+  const dayT1 = {
+    id: 'd1', round: 1, status: 'finished',
+    teams: { A: ['p1', 'p2'], B: ['p3', 'p4'] }, nextTeams: [['p5', 'p6', 'p7']],
+  }
+  // Após encerrar T1: vencedores A, 1ª próxima subiu para B, resto na fila
+  const dayT2 = {
+    id: 'd2', round: 2, status: 'ongoing',
+    teams: { A: ['p1', 'p2'], B: ['p5', 'p6'] }, nextTeams: [['p7', 'p3', 'p4']],
+    originalIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'],
+  }
+
+  it('quem ficou de fora na partida 1 tem 1 fora mesmo nunca tendo jogado [RED]', () => {
+    const result = computeCurrentMatchRoundsOut(dayT2, [dayT1, dayT2])
+    // p5/p6/p7 ficaram de fora da T1 (mesmo nunca tendo jogado antes)
+    expect(result['p5']).toBe(1)
+    expect(result['p6']).toBe(1)
+    expect(result['p7']).toBe(1)
+    // p3/p4 jogaram a T1 → zerados
+    expect(result['p3']).toBe(0)
+    expect(result['p4']).toBe(0)
+  })
+
+  it('sem original_ids, mantém comportamento antigo (fallback por histórico)', () => {
+    const semOriginal = { id: 'd2', round: 2, status: 'ongoing', teams: dayT2.teams, nextTeams: dayT2.nextTeams }
+    const result = computeCurrentMatchRoundsOut(semOriginal, [dayT1, semOriginal])
+    // p7/p3/p4 nunca jogaram: heurística antiga trata como recém-chegados → 0
+    expect(result['p7']).toBe(0)
+    expect(result['p3']).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// dayMatchNumber [RED 2026-08-21]
+//
+// Contador de partida exibido reinicia a cada dia: a rodada interna (round)
+// permanece global e crescente (para não colidir com as janelas de
+// roundsOutResetAt), mas o NÚMERO EXIBIDO é a posição da partida dentro do
+// dia atual (delimitado por stats_reset_at). Canceladas não contam.
+// ---------------------------------------------------------------------------
+
+describe('dayMatchNumber', () => {
+  const m = (id, round, startedAt, status = 'finished') => ({ id, round, startedAt, status })
+  const week1 = [
+    m('s1', 34, '2026-08-14T10:00Z'),
+    m('s2', 35, '2026-08-14T11:00Z'),
+    m('s3', 36, '2026-08-14T12:00Z', 'cancelled'),
+  ]
+  const today = [
+    m('h1', 37, '2026-08-21T10:00Z'),
+    m('h2', 38, '2026-08-21T11:00Z', 'cancelled'),
+    m('h3', 39, '2026-08-21T12:00Z'),
+  ]
+
+  it('[RED] partida de hoje é numerada a partir de 1, ignorando semanas anteriores', () => {
+    expect(dayMatchNumber(today[0], [...week1, ...today], '2026-08-20T20:00Z')).toBe(1)
+    expect(dayMatchNumber(today[2], [...week1, ...today], '2026-08-20T20:00Z')).toBe(2)
+  })
+
+  it('sessão nova sem marco: numeração global normal', () => {
+    const all = [m('a', 1, '2026-08-21T10:00Z'), m('b', 2, '2026-08-21T11:00Z')]
+    expect(dayMatchNumber(all[0], all, null)).toBe(1)
+    expect(dayMatchNumber(all[1], all, null)).toBe(2)
+  })
+
+  it('canceladas do dia não contam na numeração', () => {
+    // h2 cancelada → h3 continua nº 2
+    expect(dayMatchNumber(today[2], [...week1, ...today], '2026-08-20T20:00Z')).toBe(2)
+  })
+
+  it('partida ainda não presente na lista (recém criada) recebe o próximo número', () => {
+    const nova = { id: 'h4', round: 40 }
+    expect(dayMatchNumber(nova, [...week1, ...today], '2026-08-20T20:00Z')).toBe(3)
+  })
+})
+

@@ -11,6 +11,8 @@ function toDb(session) {
     checked_in_ids: session.checkedInIds,
     match_ids:      session.matchIds,
     status:         session.status ?? 'active',
+    panel_hash:     session.panelHash,
+    stats_reset_at: session.statsResetAt,
   }
 }
 
@@ -24,7 +26,9 @@ function fromDb(row) {
     playerIds:    row.player_ids     ?? [],
     checkedInIds: row.checked_in_ids ?? [],
     matchIds:     row.match_ids      ?? [],
-    status:       row.status         ?? 'active',
+    status:       row.status       ?? 'active',
+    panelHash:    row.panel_hash   ?? null,
+    statsResetAt: row.stats_reset_at ?? null,
   }
 }
 
@@ -45,6 +49,16 @@ export const sessionService = {
     return fromDb(data)
   },
 
+  async getByPanelHash(panelHash) {
+    const { data, error } = await supabase
+      .from('sessions').select('*').eq('panel_hash', panelHash).single()
+    if (error) {
+      if (error.code === 'PGRST116') return null  // not found
+      throw error
+    }
+    return fromDb(data)
+  },
+
   async create(session) {
     const { error } = await supabase.from('sessions').insert(toDb(session))
     if (error) throw error
@@ -57,6 +71,8 @@ export const sessionService = {
     if (patch.checkedInIds  !== undefined) dbPatch.checked_in_ids  = patch.checkedInIds
     if (patch.matchIds      !== undefined) dbPatch.match_ids       = patch.matchIds
     if (patch.status        !== undefined) dbPatch.status          = patch.status
+    if (patch.panelHash     !== undefined) dbPatch.panel_hash      = patch.panelHash
+    if (patch.statsResetAt  !== undefined) dbPatch.stats_reset_at  = patch.statsResetAt
     const { error } = await supabase.from('sessions').update(dbPatch).eq('id', sessionId)
     if (error) throw error
   },

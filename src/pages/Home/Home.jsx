@@ -124,7 +124,7 @@ export default function Home() {
         )}
       </div>
 
-      <p className="text-xs text-stone-400 dark:text-stone-600 mt-8">v2.0</p>
+      <p className="text-xs text-stone-400 dark:text-stone-600 mt-8">v2.1</p>
 
       {pendingImport && (        <div className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-800
                         border-t border-sand dark:border-stone-700 p-4 pb-8 z-40">

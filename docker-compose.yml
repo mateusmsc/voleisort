@@ -1,0 +1,30 @@
+# Banco Postgres local do voleisort — apenas para testes de dados via SQL.
+#
+# IMPORTANTE: o app (npm run dev) NÃO conversa com este banco — supabase-js
+# exige a API do Supabase. Este container serve para inspecionar/testar os
+# dados do snapshot de produção localmente.
+#
+# Subir:   docker compose up -d
+# Seed:    automático na primeira subida (dev_setup.sql + seed.sql)
+# Usar:    docker compose exec db psql -U volei -d voleisort
+# Derrubar: docker compose down          (mantém volume)
+# Zerar tudo: docker compose down -v
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: voleisort-db
+    environment:
+      POSTGRES_USER: volei
+      POSTGRES_PASSWORD: volei
+      POSTGRES_DB: voleisort
+    ports:
+      - "5433:5432"
+    volumes:
+      - voleisort_pgdata:/var/lib/postgresql/data
+      - ./migrations/local-roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+      - ./migrations/dev_setup.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backups/prod-snapshot/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+
+volumes:
+  voleisort_pgdata:

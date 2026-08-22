@@ -271,7 +271,7 @@ export default function Match() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <PanelShareButton code={session?.code} />
+          <PanelShareButton panelHash={session?.panelHash} />
           <button
             onClick={() => setMode('confirmResetRoundsOut')}
             className="text-xs text-stone-400 dark:text-stone-500 underline mr-1"

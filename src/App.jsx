@@ -57,7 +57,7 @@ export default function App() {
             <Route path="/session/:code/match/:matchId" element={<MatchWrapper />} />
             <Route path="/session/:code/export" element={<ExportSession />} />
             <Route path="/player/:playerId" element={<PlayerProfile />} />
-            <Route path="/panel/:code" element={<Panel />} />
+            <Route path="/panel/:hash" element={<Panel />} />
             <Route path="/dev/supabase" element={<SupabaseCheck />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>

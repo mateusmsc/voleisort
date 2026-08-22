@@ -246,7 +246,7 @@ export default function Checkin() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <PanelShareButton code={session?.code} />
+          <PanelShareButton panelHash={session?.panelHash} />
           <div className="flex items-center gap-1.5 bg-sage-light border border-sage
                           rounded-lg px-2.5 py-1 text-xs text-sage-dark font-medium">
             🔑 {session.code}

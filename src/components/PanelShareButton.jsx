@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { panelPath } from '../logic/panel'
 
-export default function PanelShareButton({ code }) {
+export default function PanelShareButton({ panelHash }) {
   const [copied, setCopied] = useState(false)
 
-  if (!code) return null
+  if (!panelHash) return null
 
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(
-        `${window.location.origin}${panelPath(code)}`
+        `${window.location.origin}${panelPath(panelHash)}`
       )
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)

@@ -8,13 +8,13 @@ import {
   finishedMatchesForStreak,
   dayMatchNumber,
 } from '../../logic/rounds-out'
-import { findSessionByCode } from '../../logic/panel'
+import { findSessionByPanelHash } from '../../logic/panel'
 import FieldTeams from '../Match/FieldTeams'
 import NextTeamCard from '../Match/NextTeamCard'
 
 export default function Panel() {
-  const { code } = useParams()
-  const session = useSessionStore(s => findSessionByCode(s.sessions, code))
+  const { hash } = useParams()
+  const session = useSessionStore(s => findSessionByPanelHash(s.sessions, hash))
   const getAllPlayers = usePlayerStore(s => s.getAllPlayers)
   const getMatchesBySession = useMatchStore(s => s.getMatchesBySession)
 

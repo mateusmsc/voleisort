@@ -1,16 +1,17 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
-import { advanceQueue, promoteNextTeam } from '../../logic/queue'
+import { advanceQueue, promoteNextTeam, swapWithNextTeam } from '../../logic/queue'
 import { shuffleTeams } from '../../logic/balancing'
-import { computeCurrentMatchRoundsOut, finishedDayMatches, dayMatchNumber } from '../../logic/rounds-out'
+import { computeCurrentMatchRoundsOut, finishedMatchesForStreak, dayMatchNumber } from '../../logic/rounds-out'
 import { computeWinStreak } from '../../logic/session-stats'
 import FieldTeams from './FieldTeams'
 import NextTeamCard from './NextTeamCard'
 import FinishMatchModal from './FinishMatchModal'
 import PromoteNextModal from './PromoteNextModal'
+import SwapNextModal from './SwapNextModal'
 import EditTeamsModal from './EditTeamsModal'
 import PanelShareButton from '../../components/PanelShareButton'
 
@@ -29,12 +30,6 @@ export default function Match() {
   const [mode, setMode] = useState('playing')
   const [editingNextIdx, setEditingNextIdx] = useState(null)
   const [showLevels, setShowLevels] = useState(false)
-
-  // Sessões legadas podem não ter panelHash — gera na primeira visita
-  const ensurePanelHash = useSessionStore(s => s.ensurePanelHash)
-  useEffect(() => {
-    if (session?.id) ensurePanelHash(session.id)
-  }, [session?.id, ensurePanelHash])
 
   const teamA = useMemo(
     () => (match?.teams.A ?? []).map(id => getPlayer(id)).filter(Boolean),
@@ -59,11 +54,11 @@ export default function Match() {
 
   const winStreak = useMemo(() => {
     if (!match || !session) return 0
-    const dayFinished = finishedDayMatches(
+    const streakFinished = finishedMatchesForStreak(
       match,
       useMatchStore.getState().getMatchesBySession(session.id)
     )
-    return computeWinStreak(match.teams.A ?? [], dayFinished)
+    return computeWinStreak(match.teams.A ?? [], streakFinished)
   }, [match, session, matchId])
 
   const dayNumber = useMemo(() => {
@@ -124,6 +119,32 @@ export default function Match() {
       { A: result.teamA, B: result.teamB },
       result.nextTeams,
       match.roundsOutResetAt
+    )
+    await addMatch(session.id, newMatch.id)
+    navigate(`/session/${code}/match/${newMatch.id}`)
+  }
+
+  async function handleSwapNext(side) {
+    const result = swapWithNextTeam({
+      teamA: match.teams.A ?? [],
+      teamB: match.teams.B ?? [],
+      nextTeams: match.nextTeams ?? [],
+      side,
+    })
+    if (!result) return
+
+    // Encerra sem vencedor; o novo corte de streak zera as vitórias seguidas
+    // do time que saiu de quadra.
+    await finishMatch(matchId, null)
+
+    const nextRound = (match.round ?? 1) + 1
+    const newMatch = await createMatch(
+      session.id,
+      nextRound,
+      { A: result.teamA, B: result.teamB },
+      result.nextTeams,
+      match.roundsOutResetAt,
+      nextRound
     )
     await addMatch(session.id, newMatch.id)
     navigate(`/session/${code}/match/${newMatch.id}`)
@@ -250,7 +271,7 @@ export default function Match() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <PanelShareButton panelHash={session?.panelHash} />
+          <PanelShareButton code={session?.code} />
           <button
             onClick={() => setMode('confirmResetRoundsOut')}
             className="text-xs text-stone-400 dark:text-stone-500 underline mr-1"
@@ -309,6 +330,7 @@ export default function Match() {
                   roundsOut={roundsOut}
                   showLevels={showLevels}
                   onPromote={idx === 0 ? () => setMode('promoting') : undefined}
+                  onSwap={idx === 0 ? () => setMode('swapping') : undefined}
                   onEdit={() => {
                     setEditingNextIdx(idx)
                     setMode('editingNext')
@@ -351,6 +373,15 @@ export default function Match() {
           teamAPlayers={teamA}
           teamBPlayers={teamB}
           onConfirm={handlePromoteNext}
+          onCancel={() => setMode('playing')}
+        />
+      )}
+
+      {mode === 'swapping' && (
+        <SwapNextModal
+          teamAPlayers={teamA}
+          teamBPlayers={teamB}
+          onConfirm={handleSwapNext}
           onCancel={() => setMode('playing')}
         />
       )}

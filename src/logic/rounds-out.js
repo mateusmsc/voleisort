@@ -63,6 +63,20 @@ export function finishedDayMatches(match, sessionMatches) {
 }
 
 /**
+ * finishedMatchesForStreak(match, sessionMatches) → partidas finalizadas que
+ * contam para a sequência de vitórias. Igual à janela do dia
+ * (finishedDayMatches), mas o corte também respeita match.streakResetAt —
+ * gravado quando uma troca manual com a 1ª próxima zera as vitórias seguidas.
+ * O corte efetivo é max(roundsOutResetAt, streakResetAt).
+ */
+export function finishedMatchesForStreak(match, sessionMatches) {
+  const resetFromRound = Math.max(match.roundsOutResetAt ?? 0, match.streakResetAt ?? 0)
+  return sessionMatches.filter(
+    m => m.id !== match.id && m.status === 'finished' && m.round >= resetFromRound
+  )
+}
+
+/**
  * nextRoundForDay(sessionMatches, statsResetAt) → número da próxima rodada
  *
  * A numeração de partidas reinicia a cada dia: quando a sessão tem marco de
@@ -83,14 +97,26 @@ export function nextRoundForDay(sessionMatches, statsResetAt) {
  * dayMatchNumber(currentMatch, sessionMatches, statsResetAt) → número exibido
  *
  * Contador de partida por dia: retorna a posição da partida entre as partidas
- * do dia atual (iniciadas após stats_reset_at; sem marco, usa tudo).
+ * do dia atual. A janela do dia é delimitada por stats_reset_at (marco de
+ * retomada); SEM o marco (sessão legada, criada antes da coluna), o dia é
+ * derivado do próprio started_at da partida — agrupando as partidas que
+ * começaram no mesmo DIA LOCAL. Isso evita numeração global acumulada entre
+ * semanas (bug observado em prod) e não divide a pelada que vira a meia-noite.
  * A rodada interna (round) permanece global — só o número EXIBIDO é diário.
  * Partidas canceladas não contam.
  */
+function sameLocalDay(a, b) {
+  const da = new Date(a.startedAt)
+  const db = new Date(b.startedAt)
+  return da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+}
+
 export function dayMatchNumber(currentMatch, sessionMatches, statsResetAt) {
   const pool = statsResetAt
     ? sessionMatches.filter(m => new Date(m.startedAt) > new Date(statsResetAt))
-    : sessionMatches
+    : sessionMatches.filter(m => sameLocalDay(m, currentMatch))
 
   const ordered = pool
     .filter(m => m.status !== 'cancelled')

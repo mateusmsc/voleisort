@@ -5,7 +5,7 @@ import { matchService } from '../services/matchService'
 export const useMatchStore = create((set, get) => ({
   matches: {},
 
-  async createMatch(sessionId, round, teams, nextTeams = [], roundsOutResetAt = undefined) {
+  async createMatch(sessionId, round, teams, nextTeams = [], roundsOutResetAt = undefined, streakResetAt = undefined) {
     const match = {
       id: uuid(),
       sessionId,
@@ -18,6 +18,7 @@ export const useMatchStore = create((set, get) => ({
       finishedAt: null,
       originalIds: [...teams.A, ...teams.B, ...nextTeams.flat()],
       ...(roundsOutResetAt !== undefined ? { roundsOutResetAt } : {}),
+      ...(streakResetAt !== undefined ? { streakResetAt } : {}),
     }
     set(state => ({ matches: { ...state.matches, [match.id]: match } }))
     await matchService.create(match)

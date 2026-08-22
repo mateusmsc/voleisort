@@ -3,6 +3,7 @@ import {
   computeRoundsOut,
   computeCurrentMatchRoundsOut,
   dayMatchNumber,
+  finishedMatchesForStreak,
 } from '../../../src/logic/rounds-out.js'
 
 // ---------------------------------------------------------------------------
@@ -240,3 +241,103 @@ describe('dayMatchNumber', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// [RED 2026-08-22] dayMatchNumber — sessão legada sem stats_reset_at (bug prod)
+//
+// A sessão NYN201 em prod foi criada antes da coluna stats_reset_at e nunca
+// passou por resumeSession → stats_reset_at = null. O código atual usa TODAS
+// as partidas do histórico (numeração global), então a partida nº 10 do dia
+// aparecia como "Partida 34". A numeração exibida deve ser POR DIA mesmo sem
+// o marco explícito — agrupando por dia de started_at.
+// ---------------------------------------------------------------------------
+
+describe('dayMatchNumber — sessão legada sem stats_reset_at (bug prod)', () => {
+  const m = (id, round, startedAt, status = 'finished') => ({ id, round, startedAt, status })
+
+  it('sem marco, conta apenas as partidas do MESMO DIA (não o histórico todo)', () => {
+    const semanaAnterior = [
+      m('s1', 1, '2026-08-07T10:00Z'),
+      m('s2', 2, '2026-08-07T11:00Z'),
+    ]
+    const hoje = [
+      m('h1', 3, '2026-08-21T10:00Z'),
+      m('h2', 4, '2026-08-21T11:00Z'),
+    ]
+    const todas = [...semanaAnterior, ...hoje]
+
+    expect(dayMatchNumber(hoje[0], todas, null)).toBe(1)
+    expect(dayMatchNumber(hoje[1], todas, null)).toBe(2)
+  })
+
+  it('partida de outro dia não interfere na contagem', () => {
+    const h1 = m('h1', 3, '2026-08-21T10:00Z')
+    const h2 = m('h2', 4, '2026-08-21T11:00Z')
+    const h3 = m('h3', 5, '2026-08-22T10:00Z')
+    const todas = [h1, h2, h3]
+
+    expect(dayMatchNumber(h3, todas, null)).toBe(1)
+  })
+
+  it('canceladas do mesmo dia não contam', () => {
+    const h1 = m('h1', 3, '2026-08-21T10:00Z')
+    const cx = m('cx', 4, '2026-08-21T11:00Z', 'cancelled')
+    const h3 = m('h3', 5, '2026-08-21T12:00Z')
+    const todas = [h1, cx, h3]
+
+    expect(dayMatchNumber(h3, todas, null)).toBe(2)
+  })
+
+  it('sessão nova (tudo no mesmo dia) continua numerando de 1 normalmente', () => {
+    const a = m('a', 1, '2026-08-21T10:00Z')
+    const b = m('b', 2, '2026-08-21T11:00Z')
+    expect(dayMatchNumber(a, [a, b], null)).toBe(1)
+    expect(dayMatchNumber(b, [a, b], null)).toBe(2)
+  })
+})
+
+
+
+// ---------------------------------------------------------------------------
+// finishedMatchesForStreak [RED 2026-08-22] — feature "Trocar com a próxima"
+//
+// Igual a finishedDayMatches, mas o corte do histórico também respeita
+// match.streakResetAt (troca manual zera as vitórias seguidas).
+// O corte efetivo é max(roundsOutResetAt, streakResetAt).
+// ---------------------------------------------------------------------------
+
+describe('finishedMatchesForStreak', () => {
+  function fm(id, round) {
+    return { id, round, status: 'finished', teams: { A: ['p1'], B: ['p2'] } }
+  }
+
+  it('sem marcadores: retorna todas as finalizadas exceto a própria', () => {
+    const hist = [fm('m1', 1), fm('m2', 2)]
+    const current = { id: 'cur', round: 3, status: 'ongoing' }
+    const result = finishedMatchesForStreak(current, [...hist, current])
+    expect(result.map(m => m.id)).toEqual(['m1', 'm2'])
+  })
+
+  it('streakResetAt corta o histórico na rodada da troca', () => {
+    const hist = [fm('m1', 1), fm('m2', 2)]
+    const current = { id: 'cur', round: 3, status: 'ongoing', streakResetAt: 3 }
+    const result = finishedMatchesForStreak(current, [...hist, current])
+    expect(result).toEqual([])
+  })
+
+  it('usa o MAIOR entre roundsOutResetAt e streakResetAt como corte', () => {
+    const hist = [fm('m1', 1), fm('m2', 2), fm('m3', 3)]
+    const current = { id: 'cur', round: 4, status: 'ongoing', roundsOutResetAt: 2, streakResetAt: 3 }
+    const result = finishedMatchesForStreak(current, [...hist, current])
+    // corte em 3: apenas m3 conta
+    expect(result.map(m => m.id)).toEqual(['m3'])
+  })
+
+  it('ignora partidas não finalizadas e canceladas', () => {
+    const ongoing = { id: 'x1', round: 2, status: 'ongoing', teams: { A: [], B: [] } }
+    const cancelled = { id: 'x2', round: 2, status: 'cancelled', teams: { A: [], B: [] } }
+    const finished = fm('m1', 1)
+    const current = { id: 'cur', round: 3, status: 'ongoing' }
+    const result = finishedMatchesForStreak(current, [finished, ongoing, cancelled, current])
+    expect(result.map(m => m.id)).toEqual(['m1'])
+  })
+})

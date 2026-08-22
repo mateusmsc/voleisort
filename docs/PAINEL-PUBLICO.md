@@ -1,7 +1,7 @@
 # Plano de Implementação — Painel Público de Sessão
 
-> **Feature**: URL pública `/panel/:hash` para visualização readonly de uma sessão.
-> Status: `[ ] Pendente` — pronto para implementação.
+> **Feature**: URL pública `/panel/:code` para visualização readonly de uma sessão.
+> Status: `[~]` Implementado — painel acessado pelo **código da sessão** (revisado 2026-08-22).
 
 ---
 
@@ -9,13 +9,17 @@
 
 | Aspecto | Decisão |
 |---|---|
-| **Quando existe** | Hash gerado automaticamente na criação da sessão |
-| **URL** | `/panel/:hash` (hash curto tipo código de sessão) |
+| **Quando existe** | Toda sessão tem código único; o painel usa esse código |
+| **URL** | `/panel/:code` (código da sessão, ex: `/panel/NYN201`) |
 | **Conteúdo Sessão Ativa** | Times em campo + fila de próximos (readonly, sem ações e sem níveis) |
-| **Conteúdo Sessão Finalizada** | Total de partidas + ranking de jogadores por % vitórias (com V/D detalhes) |
+| **Conteúdo Sessão Finalizada** | Ranking de vitórias do dia (total de partidas + jogadores + ranking % vitórias) |
 | **Acesso** | Público via link; não requer app instalado |
 | **Compartilhamento** | Botões em Match e Checkin |
 | **Atualização** | Carrega ao abrir/recarregar (sem polling) |
+
+> **Nota (2026-08-22)**: a URL passou de `/panel/:hash` (hash rotativo) para
+> `/panel/:code` (código fixo da sessão). O mecanismo `panelHash` foi **mantido**
+> no código (store/service/testes) mas deixou de ser usado pelo painel.
 
 ### Ranking Final (sessão finalizada)
 
@@ -29,9 +33,9 @@
 ## Arquitetura
 
 ```
-[Visita /panel/:hash]
+[Visita /panel/:code]
     → main.jsx: ensureAuth → hydrateStores (carrega tudo)
-    → Panel.jsx: busca sessão por panelHash nos stores
+    → Panel.jsx: busca sessão por código nos stores (findSessionByCode)
     → Se ativa: mostra times do match atual
     → Se finalizada: calcula stats via sessionStats(matches, players)
 ```
@@ -40,8 +44,9 @@
 
 | Camada | Arquivo | Função |
 |---|---|---|
-| DB | `migrations/006_session_panel_hash.sql` | Coluna `panel_hash text UNIQUE` em sessions |
+| DB | `migrations/006_session_panel_hash.sql` | Coluna `panel_hash text UNIQUE` em sessions (mantida, sem uso no painel) |
 | Logic | `src/logic/session-stats.js` | `computeSessionStats(matches, players)` → ranking |
+| Logic | `src/logic/panel.js` | `panelPath(code)` e `findSessionByCode(sessions, code)` |
 | Page | `src/pages/Panel/Panel.jsx` | UI readonly do painel |
 | Test | `tests/unit/logic/session-stats.test.js` | TDD da lógica de ranking |
 
@@ -54,7 +59,7 @@
 | `src/store/useSessionStore.js` | `createSession`: gera `panelHash` com `generateCode()` |
 | `src/pages/Match/Match.jsx` | Botão "Painel público" (copiar link) |
 | `src/pages/Checkin/Checkin.jsx` | Botão "Painel público" (copiar link) |
-| `src/App.jsx` | Rota `/panel/:hash` → Panel |
+| `src/App.jsx` | Rota `/panel/:code` → Panel |
 | `migrations/dev_setup.sql` | Adicionar seção 006 para coluna panel_hash |
 | `tests/unit/services/sessionService.test.js` | Testes de `panelHash` e `getByPanelHash` |
 
@@ -125,18 +130,18 @@
 ### Fase 3 — UI do Painel
 
 #### Passo 3.1
-- [x] **[UI]** Criar `src/pages/Panel/Panel.jsx` ✅ 2026-08-21
-  - Busca sessão por `panelHash`; não encontrada → "Sessão não encontrada"
-  - Sessão ativa: reutiliza `FieldTeams` (sem handlers = readonly, sem níveis) + `WaitingQueue`
+- [x] **[UI]** Criar `src/pages/Panel/Panel.jsx` ✅ 2026-08-21, revisado 2026-08-22
+  - Busca sessão por **código** via `findSessionByCode`; não encontrada → "Sessão não encontrada"
+  - Sessão ativa: reutiliza `FieldTeams` (sem handlers = readonly, sem níveis) + fila de próximos
   - Sem match em andamento → "Sessão em andamento — nenhuma partida em quadra"
   - Sessão finalizada: total de partidas + jogadores + ranking via `computeSessionStats`
   - Suporte a dark mode (padrão `dark:` do projeto)
-  - _Nota: sem teste automatizado — projeto não tem infra de UI testing; validação manual na Fase 5_
+  - _Nota: lógica pura de resolução testada em `tests/unit/logic/panel.test.js`; UI validada manualmente_
   - _Depende de: 2.2_
 
 #### Passo 3.2
-- [x] **[UI]** Atualizar `src/App.jsx` ✅ 2026-08-21
-  - Rota `/panel/:hash` → Panel
+- [x] **[UI]** Atualizar `src/App.jsx` ✅ 2026-08-21, revisado 2026-08-22
+  - Rota `/panel/:code` → Panel
   - _Depende de: 3.1_
 
 ---
@@ -167,10 +172,9 @@
 
 #### Passo 5.2
 - [ ] **[Verificação]** Validar manualmente
-  - Criar sessão nova → verificar `panelHash` gerado
-  - Acessar `/panel/:hash` → times em campo aparecem (sessão ativa)
+  - Criar sessão nova → copiar link do painel em Checkin → URL `/panel/<código>`
+  - Acessar `/panel/:code` → times em campo + próximos aparecem (sessão ativa)
   - Finalizar sessão → painel mostra ranking correto
-  - Sessão legada (sem `panelHash`) → botão oculto
   - Copiar link e abrir em outro dispositivo/navegador
   - _Depende de: 5.1_
 
@@ -196,35 +200,39 @@
 
 | Arquivo | Ação |
 |---|---|
-| `migrations/006_session_panel_hash.sql` | Criar |
+| `migrations/006_session_panel_hash.sql` | Criar (coluna mantida, sem uso no painel) |
 | `src/logic/session-stats.js` | Criar |
+| `src/logic/panel.js` | Criar (revisão 2026-08-22) |
 | `src/pages/Panel/Panel.jsx` | Criar |
 | `tests/unit/logic/session-stats.test.js` | Criar |
+| `tests/unit/logic/panel.test.js` | Criar (revisão 2026-08-22) |
 | `migrations/dev_setup.sql` | Modificar (adicionar seção 006) |
 | `src/utils/session-code.js` | Modificar |
 | `src/services/sessionService.js` | Modificar |
 | `src/store/useSessionStore.js` | Modificar |
-| `src/pages/Match/Match.jsx` | Modificar |
-| `src/pages/Checkin/Checkin.jsx` | Modificar |
-| `src/App.jsx` | Modificar |
+| `src/pages/Match/Match.jsx` | Modificar (compartilhar por código) |
+| `src/pages/Checkin/Checkin.jsx` | Modificar (compartilhar por código) |
+| `src/App.jsx` | Modificar (rota por código) |
 | `tests/unit/services/sessionService.test.js` | Modificar |
 
-**Total: 4 arquivos novos · 8 arquivos existentes modificados · 1 migration SQL**
+**Total: 6 arquivos novos · 8 arquivos existentes modificados · 1 migration SQL**
 
 ---
 
 ## Edge cases e decisões
 
-1. **Sessões legadas**: `ensurePanelHash(sessionId)` gera e persiste o hash na primeira
-   visita ao Checkin/Match (TDD em `useSessionStore.test.js`).
+1. **Sessões legadas**: o painel usa o **código** da sessão, que toda sessão já possui
+   (único). Não depende mais de `panelHash`; `ensurePanelHash`/`getByPanelHash` foram
+   mantidos no código mas não são mais chamados pelas telas.
 2. **Colisão de hash**: índice UNIQUE no banco impede; probabilidade trivial (36^6).
 3. **Ranking vazio**: sessão finalizada sem partidas → mostra "Nenhuma partida registrada".
 4. **Match sem ganhador** (cancelled): ignorado no cálculo.
 5. **Jogador removido da sessão**: se participou de partidas, seus stats ainda contam.
-6. **Sessão semanal (2026-08-21, revisado)**: a sessão é reutilizada entre semanas.
+6. **Sessão semanal (2026-08-21, revisado 2026-08-22)**: a sessão é reutilizada entre semanas.
    - `resumeSession` (ao formar times numa sessão finalizada) faz o "início do dia":
-     status → `active`, **rotaciona `panelHash`** (um link novo por dia) e grava
-     `stats_reset_at` = agora (início da janela de estatísticas).
+     status → `active`, grava `stats_reset_at` = agora (início da janela de estatísticas).
+     Antes rotacionava `panelHash`; o painel agora usa o **código fixo da sessão**,
+     então o link `/panel/:code` nunca muda.
    - `finishSession` apenas marca `finished` — não toca em `stats_reset_at`.
    - Painel finished mostra **apenas partidas com started_at > stats_reset_at**
      (o dia recém-encerrado), não o histórico acumulado.

@@ -173,6 +173,29 @@ export function promoteNextTeam({ teamA, teamB, nextTeams, side, teamSize }) {
   return { teamA: newTeamA, teamB: newTeamB, nextTeams: buildNextQueue(queueFlat, teamSize) }
 }
 
+/**
+ * swapWithNextTeam — feature "Trocar com a próxima"
+ *
+ * Diferente de promoteNextTeam: troca DIRETA de lugares. O time do lado
+ * `side` ('A'|'B') sai de quadra e ASSUME a posição de 1ª próxima; a 1ª
+ * próxima entra em campo no lugar dele. As demais próximas mantêm a ordem.
+ *
+ * @returns {{ teamA: string[], teamB: string[], nextTeams: string[][] } | null}
+ *          null se não há 1ª próxima ou o lado é inválido.
+ */
+export function swapWithNextTeam({ teamA, teamB, nextTeams, side }) {
+  if (!nextTeams || nextTeams.length === 0) return null
+  if (side !== 'A' && side !== 'B') return null
+
+  const [incoming = [], ...remainingNext] = nextTeams
+  const outgoing = side === 'A' ? teamA : teamB
+
+  const newTeamA = side === 'A' ? [...incoming] : [...teamA]
+  const newTeamB = side === 'B' ? [...incoming] : [...teamB]
+
+  return { teamA: newTeamA, teamB: newTeamB, nextTeams: [[...outgoing], ...remainingNext] }
+}
+
 export function updateRoundsOut(allCheckedInIds, playingNowIds, currentRoundsOut) {  const updated = {}
   for (const id of allCheckedInIds) {
     if (playingNowIds.includes(id)) {

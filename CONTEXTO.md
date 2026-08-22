@@ -169,6 +169,7 @@ Home → criar/entrar na sessão
 | `/session/:code/match/:id` | `Match` | Partida em andamento: times, fila, encerrar, shuffle, editar |
 | `/session/:code/export` | `ExportSession` | Resumo e link de compartilhamento |
 | `/player/:playerId` | `PlayerProfile` | Estatísticas e histórico do jogador |
+| `/panel/:code` | `Panel` | Painel público por código da sessão: fila de próximos (ativa) ou ranking do dia (finalizada) |
 | `/dev/supabase` | `SupabaseCheck` | Diagnóstico de conexão com o Supabase |
 
 ---

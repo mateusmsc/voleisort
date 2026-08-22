@@ -157,6 +157,13 @@ ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS original_participant_ids uui
 
 
 -- ---------------------------------------------------------------------------
+-- 010 — Troca com a 1ª próxima: zerar vitórias seguidas
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS streak_reset_at integer;
+
+
+-- ---------------------------------------------------------------------------
 -- Verificação final
 -- ---------------------------------------------------------------------------
 

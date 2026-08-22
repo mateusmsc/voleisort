@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
@@ -47,12 +47,6 @@ export default function Checkin() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [editingPlayer, setEditingPlayer] = useState(null)
-
-  // Sessões legadas podem não ter panelHash — gera na primeira visita
-  const ensurePanelHash = useSessionStore(s => s.ensurePanelHash)
-  useEffect(() => {
-    if (sessionId) ensurePanelHash(sessionId)
-  }, [sessionId, ensurePanelHash])
 
   const sorted = useMemo(() => {
     return [...sessionPlayers].sort((a, b) => a.name.localeCompare(b.name))
@@ -252,7 +246,7 @@ export default function Checkin() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <PanelShareButton panelHash={session?.panelHash} />
+          <PanelShareButton code={session?.code} />
           <div className="flex items-center gap-1.5 bg-sage-light border border-sage
                           rounded-lg px-2.5 py-1 text-xs text-sage-dark font-medium">
             🔑 {session.code}

@@ -8,6 +8,7 @@ import {
   levelSpreadDraft,
   rebalanceHighLevelPlayers,
   promoteNextTeam,
+  swapWithNextTeam,
 } from '../../../src/logic/queue.js'
 
 function makePlayers(count, startId = 1) {
@@ -625,12 +626,12 @@ describe('promoteNextTeam', () => {
 })
 
 // ---------------------------------------------------------------------------
-// levelSpreadDraft — aleatoriedade controlada [RED 2026-08-21]
+// levelSpreadDraft ï¿½ aleatoriedade controlada [RED 2026-08-21]
 //
-// O draft era determinístico: mesma entrada ? mesmos times sempre.
-// Agora aceita rng injetável e embaralha a ordem dos jogadores DENTRO de
-// cada balde de nível antes do round-robin. Contagens por nível por grupo
-// permanecem idênticas (equilíbrio preservado); só a composição varia.
+// O draft era determinï¿½stico: mesma entrada ? mesmos times sempre.
+// Agora aceita rng injetï¿½vel e embaralha a ordem dos jogadores DENTRO de
+// cada balde de nï¿½vel antes do round-robin. Contagens por nï¿½vel por grupo
+// permanecem idï¿½nticas (equilï¿½brio preservado); sï¿½ a composiï¿½ï¿½o varia.
 // ---------------------------------------------------------------------------
 
 function seededRandom(seed) {
@@ -647,7 +648,7 @@ function compositionSignature(result) {
   return groups.map(g => g.map(p => p.id).sort().join(',')).join('|')
 }
 
-describe('levelSpreadDraft — aleatoriedade entre sessões', () => {
+describe('levelSpreadDraft ï¿½ aleatoriedade entre sessï¿½es', () => {
   const buildPlayers = () =>
     Array.from({ length: 24 }, (_, i) =>
       makeLevel(`p${i}`, [5, 4.5, 4, 3.5][i % 4])
@@ -662,13 +663,13 @@ describe('levelSpreadDraft — aleatoriedade entre sessões', () => {
     }).join('|')
   }
 
-  it('[RED] sementes diferentes produzem composições diferentes', () => {
+  it('[RED] sementes diferentes produzem composiï¿½ï¿½es diferentes', () => {
     const c1 = compositionSignature(levelSpreadDraft(buildPlayers(), 6, seededRandom(1)))
     const c7 = compositionSignature(levelSpreadDraft(buildPlayers(), 6, seededRandom(7)))
     expect(c1).not.toBe(c7)
   })
 
-  it('sem rng explícito, duas chamadas seguidas podem divergir (default Math.random)', () => {
+  it('sem rng explï¿½cito, duas chamadas seguidas podem divergir (default Math.random)', () => {
     const players = buildPlayers()
     const assinaturas = new Set()
     for (let i = 0; i < 10; i++) {
@@ -677,7 +678,7 @@ describe('levelSpreadDraft — aleatoriedade entre sessões', () => {
     expect(assinaturas.size).toBeGreaterThan(1)
   })
 
-  it('aleatoriedade preserva matriz de níveis, tamanhos e ausência de duplicatas', () => {
+  it('aleatoriedade preserva matriz de nï¿½veis, tamanhos e ausï¿½ncia de duplicatas', () => {
     const base = levelSpreadDraft(buildPlayers(), 6)
 
     for (const seed of [1, 7, 42, 999]) {
@@ -691,5 +692,53 @@ describe('levelSpreadDraft — aleatoriedade entre sessões', () => {
       expect(allOut.length).toBe(24)
       for (const g of groups) expect(g.length).toBeLessThanOrEqual(6)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// swapWithNextTeam [RED 2026-08-22] â€” feature "Trocar com a prÃ³xima"
+//
+// Diferente de promoteNextTeam: o time que sai de quadra ASSUME a posiÃ§Ã£o
+// de 1Âª prÃ³xima (troca direta de lugares), sem redistribuir a fila.
+// ---------------------------------------------------------------------------
+
+describe('swapWithNextTeam', () => {
+  const teamA = ['a1', 'a2']
+  const teamB = ['b1', 'b2', 'b3']
+  const nextTeams = [
+    ['n1', 'n2'],   // 1Âª prÃ³xima â€” entra em campo
+    ['n3', 'n4'],
+    ['n5'],
+  ]
+
+  it('troca o Time B pela 1Âª prÃ³xima, mantendo Time A', () => {
+    const r = swapWithNextTeam({ teamA, teamB, nextTeams, side: 'B' })
+    expect(r.teamA).toEqual(['a1', 'a2'])
+    expect(r.teamB).toEqual(['n1', 'n2'])
+  })
+
+  it('troca o Time A pela 1Âª prÃ³xima, mantendo Time B', () => {
+    const r = swapWithNextTeam({ teamA, teamB, nextTeams, side: 'A' })
+    expect(r.teamA).toEqual(['n1', 'n2'])
+    expect(r.teamB).toEqual(['b1', 'b2', 'b3'])
+  })
+
+  it('time que sai assume a posiÃ§Ã£o de 1Âª prÃ³xima, demais prÃ³ximas mantÃªm ordem', () => {
+    const r = swapWithNextTeam({ teamA, teamB, nextTeams, side: 'A' })
+    expect(r.nextTeams).toEqual([
+      ['a1', 'a2'],   // time que saiu assume a 1Âª posiÃ§Ã£o
+      ['n3', 'n4'],
+      ['n5'],
+    ])
+  })
+
+  it('sem 1Âª prÃ³xima nÃ£o hÃ¡ o que trocar â€” retorna null', () => {
+    const r = swapWithNextTeam({ teamA, teamB, nextTeams: [], side: 'B' })
+    expect(r).toBeNull()
+  })
+
+  it('side invÃ¡lido retorna null', () => {
+    const r = swapWithNextTeam({ teamA, teamB, nextTeams, side: 'C' })
+    expect(r).toBeNull()
   })
 })

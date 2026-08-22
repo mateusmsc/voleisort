@@ -122,7 +122,7 @@ para decisão explícita antes de desenvolver.
 
 | # | Pendência | Origem | Esforço estimado | Decisão |
 |---|---|---|---|---|
-| P9 | **Painel público `/panel/:hash`**: plano detalhado em `docs/PAINEL-PUBLICO.md`. Hash gerado na criação da sessão; mostra times em campo (ativa) ou ranking final (finished). Readonly, link compartilhável em Match/Checkin. | Feature solicitada 2026-08-21 | Médio | `[ ] implementar` |
+| ~~P9~~ | ✅ **Implementado em 2026-08-22**: painel público por **código da sessão** (`/panel/:code`), fila de próximos (ativa) ou ranking do dia (finalizada). Plano atualizado em `docs/PAINEL-PUBLICO.md`. `panelHash` mantido no código mas sem uso no painel. | Feature solicitada 2026-08-21 | Médio | `[x] implementado` |
 
 ### 🟢 Baixa — evolução futura
 

@@ -5,17 +5,16 @@ import { useMatchStore } from '../../store/useMatchStore'
 import { computeSessionStats, computeWinStreak } from '../../logic/session-stats'
 import {
   computeCurrentMatchRoundsOut,
-  finishedDayMatches,
+  finishedMatchesForStreak,
   dayMatchNumber,
 } from '../../logic/rounds-out'
+import { findSessionByCode } from '../../logic/panel'
 import FieldTeams from '../Match/FieldTeams'
 import NextTeamCard from '../Match/NextTeamCard'
 
 export default function Panel() {
-  const { hash } = useParams()
-  const session = useSessionStore(
-    s => Object.values(s.sessions).find(sess => sess.panelHash === hash) ?? null
-  )
+  const { code } = useParams()
+  const session = useSessionStore(s => findSessionByCode(s.sessions, code))
   const getAllPlayers = usePlayerStore(s => s.getAllPlayers)
   const getMatchesBySession = useMatchStore(s => s.getMatchesBySession)
 
@@ -63,7 +62,7 @@ function ActivePanel({ matches, toPlayers, teamSize, statsResetAt }) {
   const roundsOut = computeCurrentMatchRoundsOut(ongoing, matches)
   const winStreak = computeWinStreak(
     ongoing.teams.A ?? [],
-    finishedDayMatches(ongoing, matches)
+    finishedMatchesForStreak(ongoing, matches)
   )
 
   return (

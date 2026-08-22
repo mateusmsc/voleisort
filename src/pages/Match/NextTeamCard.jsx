@@ -1,6 +1,6 @@
 const ORDINALS = ['1ª', '2ª', '3ª', '4ª', '5ª', '6ª', '7ª', '8ª']
 
-export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, showLevels, onEdit, onPromote }) {
+export default function NextTeamCard({ index, players, teamSize, roundsOut = {}, showLevels, onEdit, onPromote, onSwap }) {
   const isIncomplete = players.length < teamSize
   const label = `${ORDINALS[index] ?? `${index + 1}ª`} próxima`
 
@@ -21,14 +21,24 @@ export default function NextTeamCard({ index, players, teamSize, roundsOut = {},
           )}
         </div>
         {onPromote && (
-          <button
-            onClick={onPromote}
-            className="text-xs text-sage-dark dark:text-sage hover:text-stone-600 dark:hover:text-stone-300
-                       border border-sage rounded-md px-1.5 py-0.5"
-            title="Subir esta próxima agora"
-          >
-            ⬆️ subir
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onPromote}
+              className="text-xs text-sage-dark dark:text-sage hover:text-stone-600 dark:hover:text-stone-300
+                         border border-sage rounded-md px-1.5 py-0.5"
+              title="Subir esta próxima agora"
+            >
+              ⬆️ subir
+            </button>
+            <button
+              onClick={onSwap}
+              className="text-xs text-sky-700 dark:text-sky-400 hover:text-stone-600 dark:hover:text-stone-300
+                         border border-sky rounded-md px-1.5 py-0.5"
+              title="Trocar de lugar com um time em quadra"
+            >
+              🔁 trocar
+            </button>
+          </div>
         )}
         {onEdit && (
           <button

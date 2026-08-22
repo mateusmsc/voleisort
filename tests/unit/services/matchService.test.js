@@ -240,3 +240,73 @@ describe('matchService — updateRoundsOutResetAt', () => {
     expect(mockUpdate).toHaveBeenCalledWith({ rounds_out_reset_at: 4 })
   })
 })
+
+
+// ------------------------------------------------------------------
+
+describe('matchService — streak_reset_at (feature "Trocar com a próxima")', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // restaura a cadeia após clearAllMocks
+    Object.values(chain).forEach(fn => fn.mockReturnValue(chain))
+  })
+
+  it('toDb inclui streak_reset_at quando presente no match', async () => {
+    mockInsert.mockReturnValue({ error: null })
+
+    const match = {
+      id: 'm1', sessionId: 's1', round: 2, status: 'ongoing',
+      teams: { A: [], B: [] }, nextTeams: [],
+      startedAt: '2024-01-01T10:00:00.000Z',
+      streakResetAt: 2,
+    }
+    await matchService.create(match)
+
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ streak_reset_at: 2 }))
+  })
+
+  it('toDb omite streak_reset_at quando ausente', async () => {
+    mockInsert.mockReturnValue({ error: null })
+
+    const match = {
+      id: 'm1', sessionId: 's1', round: 1, status: 'ongoing',
+      teams: { A: [], B: [] }, nextTeams: [],
+      startedAt: '2024-01-01T10:00:00.000Z',
+    }
+    await matchService.create(match)
+
+    const row = mockInsert.mock.calls[0][0]
+    expect(row).not.toHaveProperty('streak_reset_at')
+  })
+
+  it('fromDb converte streak_reset_at → streakResetAt', () => {
+    mockSingle.mockReturnValue({
+      data: {
+        id: 'm1', session_id: 's1', round: 2, status: 'ongoing',
+        teams: { A: [], B: [] }, next_teams: [],
+        started_at: '2024-01-01T10:00:00.000Z', finished_at: null,
+        rounds_out_reset_at: null, original_participant_ids: null,
+        streak_reset_at: 2,
+      },
+      error: null,
+    })
+    // getById encadeia select().eq().single() — mockEq já retorna chain
+    return matchService.getById('m1').then(result => {
+      expect(result.streakResetAt).toBe(2)
+    })
+  })
+
+  it('fromDb sem streak_reset_at não define a propriedade', () => {
+    mockSingle.mockReturnValue({
+      data: {
+        id: 'm1', session_id: 's1', round: 1, status: 'ongoing',
+        teams: { A: [], B: [] }, next_teams: [],
+        started_at: '2024-01-01T10:00:00.000Z', finished_at: null,
+      },
+      error: null,
+    })
+    return matchService.getById('m1').then(result => {
+      expect(result).not.toHaveProperty('streakResetAt')
+    })
+  })
+})

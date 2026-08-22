@@ -131,3 +131,52 @@ export function rebuildNextTeamsAfterFieldSwap(origNexts, poolPlayers) {
     return [...kept, ...fills]
   })
 }
+
+/**
+ * rebuildNextTeamsAfterNextSwap(idx, origNexts, newTeamIds, poolIds) → string[][]
+ *
+ * Reconstrói todos os times da fila após uma troca manual dentro do
+ * EditTeamsModal quando o usuário edita a próxima de índice `idx`.
+ *
+ * O problema do fluxo anterior: ao reconstruir as outras próximas a partir
+ * do pool achatado, a ordem dos IDs no pool determinava para qual time cada
+ * jogador ia — jogadores que saíram da próxima editada podiam parar no fim
+ * da fila em vez de permanecerem nas suas próximas originais.
+ *
+ * Este helper preserva a estrutura: para cada time i ≠ idx, mantém os IDs
+ * originais que ainda estão no pool e preenche os slots vazios com os IDs
+ * que sobraram do pool (jogadores que saíram da próxima editada).
+ *
+ * @param {number} idx - índice da próxima que foi editada
+ * @param {string[][]} origNexts - IDs originais de todas as próximas (antes da edição)
+ * @param {string[]} newTeamIds - IDs finais da próxima editada (após a troca)
+ * @param {string[]} poolIds - IDs de todos os jogadores no pool após a troca
+ *   (não inclui jogadores do campo; apenas jogadores das próximas que não foram para o campo)
+ * @returns {string[][]} - nova estrutura completa de todas as próximas
+ */
+export function rebuildNextTeamsAfterNextSwap(idx, origNexts, newTeamIds, poolIds) {
+  const poolSet = new Set(poolIds)
+
+  // IDs que pertencem a alguma próxima que NÃO foi editada
+  const otherOrigIds = new Set(
+    origNexts.filter((_, i) => i !== idx).flat()
+  )
+
+  // IDs no pool que eram de outras próximas (devem voltar para seus times originais)
+  // IDs no pool que não eram de nenhuma outra próxima (vieram da próxima editada)
+  const incoming = poolIds.filter(id => !otherOrigIds.has(id))
+  const incomingQueue = [...incoming]
+
+  const result = origNexts.map((origTeam, i) => {
+    if (i === idx) return newTeamIds
+
+    // Para as outras próximas: manter os IDs que ainda estão no pool
+    const kept = origTeam.filter(id => poolSet.has(id))
+    const missing = origTeam.length - kept.length
+    // Preencher slots vazios com os jogadores vindos da próxima editada
+    const fills = incomingQueue.splice(0, missing)
+    return [...kept, ...fills]
+  })
+
+  return result
+}

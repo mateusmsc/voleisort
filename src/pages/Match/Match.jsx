@@ -4,7 +4,7 @@ import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { advanceQueue, promoteNextTeam, swapWithNextTeam } from '../../logic/queue'
-import { shuffleTeams, rebuildNextTeamsAfterFieldSwap } from '../../logic/balancing'
+import { shuffleTeams, rebuildNextTeamsAfterFieldSwap, rebuildNextTeamsAfterNextSwap } from '../../logic/balancing'
 import { computeCurrentMatchRoundsOut, finishedMatchesForStreak, dayMatchNumber } from '../../logic/rounds-out'
 import { computeWinStreak } from '../../logic/session-stats'
 import FieldTeams from './FieldTeams'
@@ -195,17 +195,9 @@ export default function Match() {
       const updatedFieldIds = new Set([...newTeamAIds, ...newTeamBIds])
       const otherQueueIds = poolIds.filter(id => !updatedFieldIds.has(id))
 
-      const otherOrigNexts = nexts.filter((_, i) => i !== idx)
-      const remaining = [...otherQueueIds]
-      const reconstructedOthers = otherOrigNexts.map(origTeam => {
-        return remaining.splice(0, origTeam.length)
-      }).filter(t => t.length > 0)
-      while (remaining.length > 0) {
-        reconstructedOthers.push(remaining.splice(0, teamSize))
-      }
-
-      reconstructedOthers.splice(idx, 0, newNextTeamIds)
-      await updateNextTeams(matchId, reconstructedOthers.filter(t => t.length > 0))
+      const origNexts = nexts.map(t => t.map(p => p.id))
+      const newNextTeams = rebuildNextTeamsAfterNextSwap(idx, origNexts, newNextTeamIds, otherQueueIds)
+      await updateNextTeams(matchId, newNextTeams.filter(t => t.length > 0))
     } else {
       const updatedNexts = nexts.map((team, i) => i === idx ? newTeam : team)
       await updateNextTeams(matchId, updatedNexts.map(t => t.map(p => p.id)))

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { swapPlayers, shuffleTeams } from '../../../src/logic/balancing.js'
+import { swapPlayers, shuffleTeams, rebuildNextTeamsAfterFieldSwap } from '../../../src/logic/balancing.js'
 
 describe('shuffleTeams — botao de mistura deve existir e funcionar', () => {
   it('mistura os times trocando pares sem duplicar jogadores', () => {
@@ -103,7 +103,73 @@ describe('swapPlayers — logica de troca usada pelo EditTeamsModal', () => {
 })
 
 // ---------------------------------------------------------------------------
-// [RED] BUG: troca entre 1a proxima e 2a proxima via EditTeamsModal
+// [RED] BUG-FIELD-SWAP: troca manual entre time em campo e 1ª próxima
+//
+// Cenário reportado: jogador A (time em campo) é trocado com jogador B
+// (1ª próxima). O jogador A deveria entrar na 1ª próxima no lugar de B.
+// Bug atual: handleSaveCurrentTeams usa splice sequencial sobre o pool
+// achatado, que não preserva a estrutura dos times da fila. O jogador A
+// acaba no fim da fila, não na 1ª próxima.
+//
+// Correção: rebuildNextTeamsAfterFieldSwap(origNexts, poolPlayers)
+//   - origNexts: array de arrays de IDs (formato original antes do swap)
+//   - poolPlayers: jogadores no pool após o swapPlayers (nova composição)
+//   - retorna: array de arrays de IDs com a estrutura preservada, apenas
+//     substituindo os jogadores que mudaram dentro de cada time.
+// ---------------------------------------------------------------------------
+describe('[RED] BUG-FIELD-SWAP: troca entre campo e 1ª próxima deve preservar posição na fila', () => {
+  // Monta situação: campo=[a1..a6, b1..b6], 1ª próxima=[q1..q6], 2ª próxima=[q7..q12]
+  // Usuário troca a1 (campo) com q1 (1ª próxima)
+  // pool após swapPlayers = [a1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12]
+  // (a1 entra no pool; q1 saiu do pool e foi para campo)
+
+  const mk = id => ({ id, rating: 50 })
+
+  const origNexts = [
+    ['q1','q2','q3','q4','q5','q6'],
+    ['q7','q8','q9','q10','q11','q12'],
+  ]
+  // pool após a troca: a1 entrou, q1 saiu
+  const poolAfterSwap = ['a1','q2','q3','q4','q5','q6','q7','q8','q9','q10','q11','q12'].map(mk)
+
+  it('a1 fica na 1ª próxima (posição de q1), não cai na 2ª nem vai para o fim', () => {
+    const result = rebuildNextTeamsAfterFieldSwap(origNexts, poolAfterSwap)
+    expect(result[0]).toContain('a1')      // a1 deve estar na 1ª próxima
+    expect(result[0]).not.toContain('q1')  // q1 saiu (foi para campo)
+    expect(result[1]).not.toContain('a1')  // a1 NÃO deve estar na 2ª próxima
+  })
+
+  it('2ª próxima permanece intacta quando só a 1ª foi afetada', () => {
+    const result = rebuildNextTeamsAfterFieldSwap(origNexts, poolAfterSwap)
+    expect(result[1]).toEqual(['q7','q8','q9','q10','q11','q12'])
+  })
+
+  it('sem duplicatas em toda a fila', () => {
+    const result = rebuildNextTeamsAfterFieldSwap(origNexts, poolAfterSwap)
+    const all = result.flat()
+    expect(new Set(all).size).toBe(all.length)
+  })
+
+  it('tamanho de cada time é preservado', () => {
+    const result = rebuildNextTeamsAfterFieldSwap(origNexts, poolAfterSwap)
+    expect(result[0].length).toBe(6)
+    expect(result[1].length).toBe(6)
+  })
+
+  it('troca na 2ª próxima também preserva a estrutura da 1ª', () => {
+    // Usuário troca a2 (campo) com q7 (1ª posição da 2ª próxima)
+    // pool após swap: [q1..q6, a2, q8..q12]
+    const origNexts2 = [
+      ['q1','q2','q3','q4','q5','q6'],
+      ['q7','q8','q9','q10','q11','q12'],
+    ]
+    const poolAfter2 = ['q1','q2','q3','q4','q5','q6','a2','q8','q9','q10','q11','q12'].map(mk)
+    const result = rebuildNextTeamsAfterFieldSwap(origNexts2, poolAfter2)
+    expect(result[0]).toEqual(['q1','q2','q3','q4','q5','q6'])   // 1ª intacta
+    expect(result[1]).toContain('a2')                              // a2 na 2ª
+    expect(result[1]).not.toContain('q7')                          // q7 saiu
+  })
+})
 //
 // O fluxo do modal de edicao de proxima (editingNext):
 //   - initialGroups = [nexts[idx]]          -- so a proxima que esta sendo editada

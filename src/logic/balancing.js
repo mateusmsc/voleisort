@@ -92,3 +92,42 @@ export function swapPlayers({ groups, pool, idA, fromA, idB, fromB }) {
 
   return { groups: newGroups, pool: newPool }
 }
+
+/**
+ * rebuildNextTeamsAfterFieldSwap(origNexts, poolPlayers) → string[][]
+ *
+ * Reconstrói os times da fila após uma troca manual entre um time em campo
+ * e um jogador das próximas (EditTeamsModal no modo campo).
+ *
+ * O pool resultante do swapPlayers contém todos os jogadores das próximas
+ * (inclusive o jogador do campo que foi trocado), mas a ORDEM pode variar.
+ * Este helper preserva a estrutura (qual time é o 1º, 2º, etc.) mantendo
+ * os jogadores que não foram alterados em seus times originais e colocando
+ * o novo jogador (vindo do campo) exatamente no time que perdeu um slot.
+ *
+ * Algoritmo:
+ *   Para cada time original, verifica quais IDs ainda estão no pool.
+ *   Os que estão → ficam no mesmo time.
+ *   O slot vazio (jogador que foi para campo) → preenchido pelo jogador novo
+ *   que está no pool mas não pertencia a nenhum time original.
+ *
+ * @param {string[][]} origNexts - IDs originais dos times da fila
+ * @param {Array<{id:string}>} poolPlayers - jogadores no pool após o swap
+ * @returns {string[][]} - nova estrutura de fila (arrays de IDs)
+ */
+export function rebuildNextTeamsAfterFieldSwap(origNexts, poolPlayers) {
+  const poolIds = new Set(poolPlayers.map(p => p.id))
+  const allOrigIds = new Set(origNexts.flat())
+
+  // Jogadores novos no pool que não faziam parte de nenhuma próxima original
+  // (são os que vieram do campo via troca)
+  const incoming = poolPlayers.map(p => p.id).filter(id => !allOrigIds.has(id))
+  const incomingQueue = [...incoming]
+
+  return origNexts.map(origTeam => {
+    const kept = origTeam.filter(id => poolIds.has(id))
+    const missing = origTeam.length - kept.length
+    const fills = incomingQueue.splice(0, missing)
+    return [...kept, ...fills]
+  })
+}

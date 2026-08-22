@@ -4,7 +4,7 @@ import { useMatchStore } from '../../store/useMatchStore'
 import { useSessionStore } from '../../store/useSessionStore'
 import { usePlayerStore } from '../../store/usePlayerStore'
 import { advanceQueue, promoteNextTeam, swapWithNextTeam } from '../../logic/queue'
-import { shuffleTeams } from '../../logic/balancing'
+import { shuffleTeams, rebuildNextTeamsAfterFieldSwap } from '../../logic/balancing'
 import { computeCurrentMatchRoundsOut, finishedMatchesForStreak, dayMatchNumber } from '../../logic/rounds-out'
 import { computeWinStreak } from '../../logic/session-stats'
 import FieldTeams from './FieldTeams'
@@ -153,16 +153,9 @@ export default function Match() {
   async function handleSaveCurrentTeams([newA, newB], newPool) {
     await updateTeams(matchId, { A: newA.map(p => p.id), B: newB.map(p => p.id) })
     if (newPool !== undefined) {
-      const teamSize = session.config.teamSize
-      const poolIds = [...newPool.map(p => p.id)]
-      const reconstructed = nexts.map(origTeam => {
-        const chunk = poolIds.splice(0, origTeam.length)
-        return chunk
-      }).filter(t => t.length > 0)
-      while (poolIds.length > 0) {
-        reconstructed.push(poolIds.splice(0, teamSize))
-      }
-      await updateNextTeams(matchId, reconstructed)
+      const origNexts = nexts.map(team => team.map(p => p.id))
+      const reconstructed = rebuildNextTeamsAfterFieldSwap(origNexts, newPool)
+      await updateNextTeams(matchId, reconstructed.filter(t => t.length > 0))
     }
     setMode('playing')
   }
